@@ -1369,17 +1369,35 @@ cmd_upgrade() {
     exit 1
   fi
 
-  local before after
+  # Detect the default remote branch (main or master)
+  local remote_branch
+  remote_branch=$(git -C "$INSTALL_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null     | sed 's|refs/remotes/origin/||') || remote_branch="main"
+
+  local before
   before=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
 
-  log_info "Pulling latest changes..."
-  git -C "$INSTALL_DIR" pull --ff-only || {
-    log_error "git pull failed. Check your connection or run: git -C $INSTALL_DIR pull"
+  # Warn if local changes exist (they will be discarded)
+  local dirty
+  dirty=$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null)
+  if [[ -n "$dirty" ]]; then
+    log_warning "Local changes in $INSTALL_DIR will be discarded:"
+    git -C "$INSTALL_DIR" status --short
+    echo ""
+  fi
+
+  log_info "Fetching from origin..."
+  git -C "$INSTALL_DIR" fetch origin "$remote_branch" || {
+    log_error "git fetch failed. Check your connection."
     exit 1
   }
 
+  log_info "Resetting to origin/$remote_branch..."
+  git -C "$INSTALL_DIR" reset --hard "origin/$remote_branch"
+
+  local after
   after=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
 
+  echo ""
   if [[ "$before" == "$after" ]]; then
     log_success "Already up to date ($after)."
   else
