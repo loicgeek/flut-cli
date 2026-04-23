@@ -90,6 +90,19 @@ cmd_init() {
   # --------------------------------------------------------------------------
   # Entry points
   # --------------------------------------------------------------------------
+  # main.dart  →  default entry point for `flutter run` (dev flavor)
+  # main_dev / main_staging / main_prod  →  explicit flavor targets for CI
+  mkf "$L/main.dart" "import 'core/bootstrap.dart';
+import 'core/config/app_config.dart';
+
+// Default entry point — maps to the dev flavor.
+// Use flavor-specific targets for CI / release builds:
+//   flutter run -t lib/main_dev.dart
+//   flutter run -t lib/main_staging.dart
+//   flutter run -t lib/main_prod.dart
+void main() => bootstrap(AppConfig.dev);
+"
+
   mkf "$L/main_dev.dart" "import 'core/bootstrap.dart';
 import 'core/config/app_config.dart';
 
@@ -931,7 +944,7 @@ cmd_feature() {
   mkd "$BASE/presentation/widgets"
 
   if [[ "$use_service" == true ]]; then
-    mkd "$BASE/services"
+    mkd "$BASE/data/services"
   fi
 
   # --------------------------------------------------------------------------
@@ -985,7 +998,7 @@ cmd_feature() {
   # Without --service: the Repository handles data access directly.
   # --------------------------------------------------------------------------
   if [[ "$use_service" == true ]]; then
-    mkf "$BASE/services/${name}_service.dart" "import '../data/models/${name}_model.dart';
+    mkf "$BASE/data/services/${name}_service.dart" "import '../models/${name}_model.dart';
 
 /// ${pascal}Service handles data orchestration across multiple sources,
 /// or any business logic that does not belong inside the repository itself.
@@ -1019,7 +1032,7 @@ class ${pascal}Service {
 import '../../../../core/error/exception_mapper.dart';
 import '../../../../core/error/failures.dart';
 import '../models/${name}_model.dart';
-import '../../services/${name}_service.dart';
+import '../services/${name}_service.dart';
 
 class ${pascal}Repository {
   const ${pascal}Repository(this._service);
@@ -1328,16 +1341,31 @@ class _${pascal}List extends StatelessWidget {
 # ==============================================================================
 #  COMMAND: upgrade
 # ==============================================================================
+
+# Resolve the real directory of this script, following symlinks.
+# Works on macOS (no readlink -f) and Linux.
+_resolve_install_dir() {
+  local source="${BASH_SOURCE[0]}"
+  local dir
+  while [[ -L "$source" ]]; do
+    dir="$(cd -P "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    # Handle relative symlinks
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd -P "$(dirname "$source")" && pwd
+}
+
 cmd_upgrade() {
   local INSTALL_DIR
-  INSTALL_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "$0")")" && pwd)"
+  INSTALL_DIR="$(_resolve_install_dir)"
 
   log_section "Upgrading flut-cli"
   log_info "Install dir: $INSTALL_DIR"
 
   if [[ ! -d "$INSTALL_DIR/.git" ]]; then
     log_error "Cannot upgrade: $INSTALL_DIR is not a git repository."
-    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash"
+    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/kehitaa/flut-cli/main/install.sh | bash"
     exit 1
   fi
 
