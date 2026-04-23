@@ -1337,7 +1337,7 @@ cmd_upgrade() {
 
   if [[ ! -d "$INSTALL_DIR/.git" ]]; then
     log_error "Cannot upgrade: $INSTALL_DIR is not a git repository."
-    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/kehitaa/flut-cli/main/install.sh | bash"
+    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash"
     exit 1
   fi
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  flut-cli installer
-#  Usage: curl -fsSL https://raw.githubusercontent.com/kehitaa/flut-cli/main/install.sh | bash
+#  Usage: curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash
 # =============================================================================
 
 set -euo pipefail
 
-REPO="https://github.com/kehitaa/flut-cli.git"
+REPO="https://github.com/loicgeek/flut-cli.git"
 DEST="$HOME/.flut-cli"
 BIN="/usr/local/bin/flut"
 
