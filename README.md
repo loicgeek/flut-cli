@@ -46,7 +46,7 @@ sudo ln -s ~/.flut-cli/flut.sh /usr/local/bin/flut
 ## Update
 
 ```bash
-cd ~/.flut-cli && git pull
+flut upgrade
 ```
 
 No reinstall needed — the symlink picks up changes immediately.
