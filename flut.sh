@@ -844,6 +844,88 @@ class ErrorState extends StatelessWidget {
 '
 
   # --------------------------------------------------------------------------
+  # IDE — VS Code launch configurations
+  # --------------------------------------------------------------------------
+  log_section "IDE settings"
+
+  mkd ".vscode"
+  mkf ".vscode/launch.json" '{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dev",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_dev.dart",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Dev (profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_dev.dart",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "Staging",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_staging.dart",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Prod",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_prod.dart",
+      "flutterMode": "release"
+    }
+  ]
+}
+'
+
+  # --------------------------------------------------------------------------
+  # IDE — Android Studio / IntelliJ run configurations
+  # --------------------------------------------------------------------------
+  mkd ".idea/runConfigurations"
+
+  mkf ".idea/runConfigurations/Dev.xml" '<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Dev" type="FlutterRunConfigurationType" factoryName="Flutter">
+    <option name="filePath" value="$PROJECT_DIR$/lib/main_dev.dart" />
+    <option name="additionalArgs" value="" />
+    <method v="2" />
+  </configuration>
+</component>
+'
+
+  mkf ".idea/runConfigurations/Dev_profile.xml" '<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Dev (profile)" type="FlutterRunConfigurationType" factoryName="Flutter">
+    <option name="filePath" value="$PROJECT_DIR$/lib/main_dev.dart" />
+    <option name="additionalArgs" value="--profile" />
+    <method v="2" />
+  </configuration>
+</component>
+'
+
+  mkf ".idea/runConfigurations/Staging.xml" '<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Staging" type="FlutterRunConfigurationType" factoryName="Flutter">
+    <option name="filePath" value="$PROJECT_DIR$/lib/main_staging.dart" />
+    <option name="additionalArgs" value="" />
+    <method v="2" />
+  </configuration>
+</component>
+'
+
+  mkf ".idea/runConfigurations/Prod.xml" '<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Prod" type="FlutterRunConfigurationType" factoryName="Flutter">
+    <option name="filePath" value="$PROJECT_DIR$/lib/main_prod.dart" />
+    <option name="additionalArgs" value="--release" />
+    <method v="2" />
+  </configuration>
+</component>
+'
+
+  # --------------------------------------------------------------------------
   # flutter pub add
   # --------------------------------------------------------------------------
   log_section "Installing packages"
