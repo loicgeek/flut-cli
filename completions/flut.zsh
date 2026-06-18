@@ -78,4 +78,4 @@ _flut_features() {
   fi
 }
 
-_flut
+compdef _flut flut

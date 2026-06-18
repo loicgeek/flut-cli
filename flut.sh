@@ -17,8 +17,16 @@
 
 set -euo pipefail
 
-# Read version from the VERSION file sitting next to this script.
-_FLUT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# Resolve the real script directory, following symlinks (works on macOS + Linux).
+_flut_src="${BASH_SOURCE[0]:-$0}"
+while [[ -L "$_flut_src" ]]; do
+  _flut_src_dir="$(cd -P "$(dirname "$_flut_src")" && pwd)"
+  _flut_src="$(readlink "$_flut_src")"
+  [[ "$_flut_src" != /* ]] && _flut_src="$_flut_src_dir/$_flut_src"
+done
+_FLUT_SCRIPT_DIR="$(cd -P "$(dirname "$_flut_src")" && pwd)"
+unset _flut_src _flut_src_dir
+
 FLUT_VERSION="$(tr -d '[:space:]' < "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null || true)"
 FLUT_VERSION="${FLUT_VERSION:-dev}"
 
@@ -1433,23 +1441,8 @@ class _${pascal}List extends StatelessWidget {
 #  COMMAND: upgrade
 # ==============================================================================
 
-# Resolve the real directory of this script, following symlinks.
-# Works on macOS (no readlink -f) and Linux.
-_resolve_install_dir() {
-  local source="${BASH_SOURCE[0]}"
-  local dir
-  while [[ -L "$source" ]]; do
-    dir="$(cd -P "$(dirname "$source")" && pwd)"
-    source="$(readlink "$source")"
-    # Handle relative symlinks
-    [[ "$source" != /* ]] && source="$dir/$source"
-  done
-  cd -P "$(dirname "$source")" && pwd
-}
-
 cmd_upgrade() {
-  local INSTALL_DIR
-  INSTALL_DIR="$(_resolve_install_dir)"
+  local INSTALL_DIR="$_FLUT_SCRIPT_DIR"
 
   log_section "Upgrading flut-cli"
   log_info "Install dir: $INSTALL_DIR"
