@@ -48,8 +48,9 @@ fi
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 if command -v flut &>/dev/null; then
+  local_version="$(cat "$DEST/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")"
   echo ""
-  echo -e "${GREEN}${BOLD}  flut-cli installed successfully.${RESET}"
+  echo -e "${GREEN}${BOLD}  flut-cli v${local_version} installed successfully.${RESET}"
   echo ""
   echo -e "  Run ${CYAN}flut --help${RESET} to get started."
 else

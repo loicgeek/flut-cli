@@ -14,12 +14,16 @@ on:
     paths:
       - "*.sh"
       - "tests/**"
+      - "completions/**"
+      - "VERSION"
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "*.sh"
       - "tests/**"
+      - "completions/**"
+      - "VERSION"
       - ".github/workflows/ci.yml"
 
 concurrency:

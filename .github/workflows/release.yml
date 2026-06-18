@@ -1,0 +1,75 @@
+# =============================================================================
+#  Release workflow for flut-cli
+#
+#  Triggered by pushing a semver tag (e.g. v0.2.0).
+#  Steps:
+#    1. Run the full test suite (lint + bats)
+#    2. Create a GitHub Release with auto-generated release notes
+#
+#  How to release a new version:
+#    1. Update the VERSION file:   echo "0.2.0" > VERSION
+#    2. Commit:                    git add VERSION && git commit -m "chore: bump version to 0.2.0"
+#    3. Tag and push:              git tag v0.2.0 && git push origin main --tags
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 1. Run the full test suite before releasing ──────────────────────────────
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck and bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck bats
+
+      - name: Lint shell scripts
+        run: shellcheck --shell=bash flut.sh install.sh
+
+      - name: Run BATS tests
+        run: bats --print-output-on-failure tests/
+
+  # ── 2. Create the GitHub Release ─────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from VERSION file
+        id: version
+        run: |
+          version="$(cat VERSION | tr -d '[:space:]')"
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches VERSION file
+        run: |
+          tag="${GITHUB_REF_NAME}"           # e.g. v0.2.0
+          file_version="v${{ steps.version.outputs.value }}"  # e.g. v0.2.0
+          if [[ "$tag" != "$file_version" ]]; then
+            echo "Tag $tag does not match VERSION file ($file_version)"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "flut-cli ${{ github.ref_name }}" \
+            --generate-notes
