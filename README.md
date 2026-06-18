@@ -1,5 +1,10 @@
 # flut-cli
 
+[![CI](https://github.com/loicgeek/flut-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/loicgeek/flut-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/loicgeek/flut-cli/actions/workflows/release.yml/badge.svg)](https://github.com/loicgeek/flut-cli/actions/workflows/release.yml)
+[![Version](https://img.shields.io/github/v/release/loicgeek/flut-cli?label=version)](https://github.com/loicgeek/flut-cli/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > Flutter project scaffold CLI — by [NTECH-SERVICES](https://github.com/loicgeek)
 
 `flut` is an opinionated bash CLI that bootstraps Flutter projects and features
@@ -53,6 +58,24 @@ No reinstall needed — the symlink picks up changes immediately.
 
 ---
 
+## Shell Completions
+
+Tab-completion for bash and zsh. The installer prints the exact lines; you can also add them manually:
+
+**bash** — add to `~/.bashrc`:
+```bash
+source ~/.flut-cli/completions/flut.bash
+```
+
+**zsh** — add to `~/.zshrc`:
+```zsh
+source ~/.flut-cli/completions/flut.zsh
+```
+
+Completions cover all commands, `--bloc`/`--service` flags, `generate` types, and feature names from `lib/features/`.
+
+---
+
 ## Uninstall
 
 ```bash
@@ -78,8 +101,11 @@ flut generate bloc <feat> [name]        Generate a Bloc + events + state
 flut check                              Audit architecture conventions
 flut doctor                             Check project health
 flut upgrade                            Update flut-cli to latest version
+flut --version                          Print the installed version
 flut --help                             Show this help
 ```
+
+> For a complete reference with all flags and examples, see [docs/commands.md](docs/commands.md).
 
 > **Important:** always run `flut` from the **root of your Flutter project**
 > (the directory that contains `pubspec.yaml`).
@@ -241,6 +267,8 @@ Without `--service`, the Cubit/Bloc injects the repository directly — keeping 
 ---
 ## Architecture overview
 
+> For a deep dive into the rationale and all conventions, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```
 lib/
 ├── core/          shared infrastructure (DI, router, API, theme, error…)
@@ -302,10 +330,14 @@ return child;
 
 This CLI is maintained by the NTECH-SERVICES team. PRs and issues welcome.
 
-1. Fork the repo
-2. Create a branch: `git checkout -b feat/my-change`
-3. Test locally: `bash flut.sh --help`
-4. Open a PR
+```bash
+git clone https://github.com/loicgeek/flut-cli.git
+cd flut-cli
+bats tests/          # run the test suite
+bash flut.sh --help  # smoke-test
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, code style, and testing guidelines.
 
 ---
 

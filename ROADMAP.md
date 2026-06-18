@@ -22,8 +22,12 @@
 | `tests/feature.bats` | `flut feature` — Cubit/Bloc/Service flags, file content, duplicates | 18 |
 | `tests/init.bats` | `flut init` — directory structure, all files, IDE settings, idempotency | 27 |
 | `tests/upgrade.bats` | `flut upgrade` — help mention, git detection, fetch failure | 3 |
+| `tests/check.bats` | `flut check` — feature structure, sealed states, banned packages, layer boundaries, translation keys | 9 |
+| `tests/doctor.bats` | `flut doctor` — Flutter SDK, project root, required packages, scaffold integrity, git | 10 |
+| `tests/generate.bats` | `flut generate` — all sub-commands, file content, next-steps output | 13 |
+| `tests/completions.bats` | Shell completions — file existence, sourcing, completion suggestions, dynamic features | 15 |
 | `tests/helpers.bash` | Shared utilities — sandbox, assertions (`assert_file_exists`, `assert_file_contains`, etc.) | — |
-| **Total** | | **97 tests — all passing** |
+| **Total** | | **109 tests — all passing** |
 
 **Run with:**
 ```bash
@@ -49,10 +53,11 @@ brew install bats            # via brew
 | `test` | Push/PR to main | `bats` test suite (no Flutter needed) |
 | `integration` | Push/PR (main repo only) | Creates real Flutter project, runs `flut init` + `flut feature`, verifies output |
 
-All jobs run on `ubuntu-latest` with path filters to skip irrelevant changes.
+All jobs run on `ubuntu-latest` with path filters (`*.sh`, `tests/**`, `completions/**`, `VERSION`).
 
-**Planned (not yet implemented):**
-- `.github/workflows/release.yml` — automated GitHub releases on tags
+**Workflow: `.github/workflows/release.yml`** *(added in Phase 3)*
+
+Triggered by `v*.*.*` tag pushes. Runs the full test suite, then creates a GitHub Release with auto-generated notes. Verifies the tag matches the `VERSION` file before releasing.
 
 ---
 
@@ -69,9 +74,9 @@ A comprehensive contributing guide covering:
 
 ---
 
-## ✅ Phase 2 — New Commands *(In progress)*
+## ✅ Phase 2 — New Commands *(Completed)*
 
-### ✅ 2.1 `flut check` — Architecture Audit *(Completed)*
+### ✅ 2.1 `flut check` — Architecture Audit
 
 Validates that a Flutter project still follows the NTECH-SERVICES clean architecture conventions after manual edits.
 
@@ -81,7 +86,7 @@ Validates that a Flutter project still follows the NTECH-SERVICES clean architec
 
 ---
 
-### ✅ 2.2 `flut doctor` — Project Health *(Completed)*
+### ✅ 2.2 `flut doctor` — Project Health
 
 Analyzes the current Flutter project and reports its health status.
 
@@ -89,7 +94,7 @@ Analyzes the current Flutter project and reports its health status.
 
 ---
 
-### ✅ 2.3 `flut generate` Sub-commands *(Completed)*
+### ✅ 2.3 `flut generate` Sub-commands
 
 Reusable generators for individual components (not full feature slices).
 
@@ -105,63 +110,75 @@ Each sub-command places the file in the correct feature directory and prints the
 
 ---
 
-## 📋 Phase 3 — Developer Experience *(Planned)*
+## ✅ Phase 3 — Developer Experience & Documentation *(Completed)*
 
-### 3.1 Shell Completions
+### ✅ 3.1 Shell Completions
 
 Tab-completion for `flut` commands and flags in bash and zsh.
 
 **Files:**
 - `completions/flut.bash` — bash completion
-- `completions/flut.zsh` — zsh completion
-
-**Install commands printed by `install.sh`:**
-```bash
-# bash
-source completions/flut.bash
-
-# zsh
-source completions/flut.zsh
-```
+- `completions/flut.zsh` — zsh completion (with descriptions via `_describe`)
 
 **Completion targets:**
-- Top-level: `init`, `feature`, `upgrade`, `check`, `doctor`, `generate`, `clean`
-- Flags: `--bloc`, `--service`
-- Dynamic: suggest feature names from `lib/features/`
+- Top-level: `init`, `feature`, `upgrade`, `check`, `doctor`, `generate`
+- `feature` flags: `--bloc`, `--service`
+- `generate` types: `model`, `screen`, `repository`, `cubit`, `bloc`
+- Dynamic: `--feature` argument suggests existing feature names from `lib/features/`
+
+**Install (printed by `install.sh` after install):**
+```bash
+# bash — add to ~/.bashrc
+source ~/.flut-cli/completions/flut.bash
+
+# zsh — add to ~/.zshrc
+source ~/.flut-cli/completions/flut.zsh
+```
 
 ---
 
-### 3.2 Improved `flut upgrade`
+### ✅ 3.2 Versioning & `flut upgrade` improvements
 
-**Current issues:**
-- Hardcodes repo URL instead of detecting from git remote
-- Doesn't check current version before upgrading
-- No version comparison (always pulls even if up to date)
+**`VERSION` file** — single source of truth for the current version, tracked in the repo.
 
-**Improvements:**
-1. Auto-detect remote from `git -C "$INSTALL_DIR" remote get-url origin`
-2. Add a local version file `VERSION` tracked in repo
-3. Check latest tag on GitHub API before pulling
-4. Show changelog diffs between versions
+**`flut --version`** — new flag that prints `flut v0.1.0`.
+
+**`flut upgrade` improvements:**
+- Displays current version before pulling (`Current version: v0.1.0`)
+- Displays new version after pulling (`Upgraded v0.1.0 → v0.2.0`)
+- Shows git changelog between commits (`git log --oneline`)
+- Reports "Already up to date" when nothing changed
+- `chmod +x` after `git reset --hard` — fixes "permission denied: flut" on macOS/Linux
+- `flut.sh` now tracked in git as `100755` (executable) so the mode survives `git reset --hard`
+- Fixed stale repo URL in error message (`kehitaa` → `loicgeek`)
+
+**Release workflow (`.github/workflows/release.yml`):**
+
+To cut a new release:
+```bash
+echo "0.2.0" > VERSION
+git add VERSION && git commit -m "chore: bump version to 0.2.0"
+git tag v0.2.0 && git push origin main --tags
+```
+The workflow runs the full test suite, verifies the tag matches `VERSION`, then creates a GitHub Release with auto-generated notes.
 
 ---
 
-### 3.3 Documentation
+### ✅ 3.3 Documentation *(Completed)*
 
-| Item | Description |
+| File | Description |
 |---|---|
-| **README.md** | Add badge section (CI, license, version) |
-| **ARCHITECTURE.md** | Deep dive into the clean architecture conventions enforced by this CLI |
-| **docs/commands.md** | Full reference for every command with examples |
-| **docs/faq.md** | Common questions and troubleshooting |
-| **GitHub Pages site** | Optional: deploy docs as a site via `docs/` dir or Jekyll |
+| **README.md** | Added CI/Release/Version/License badges; shell completions section; links to ARCHITECTURE.md and docs/commands.md; improved Contributing section |
+| **ARCHITECTURE.md** | Deep dive: guiding principles, folder structure, layer rules, state management, data modeling, error handling, DI, navigation, service layer, translation keys, banned packages, full `flut check` rule table |
+| **docs/commands.md** | Full command reference — every flag, argument, example, exit code, and next-steps checklist |
+| **docs/faq.md** | 20+ Q&A covering installation, architecture decisions, check/doctor behavior, and contribution how-tos |
 
 ---
 
-## 📋 Phase 4 — Polish *(Planned)*
+## 📋 Phase 4 — Advanced Features *(Planned)*
 
-- **`.github/workflows/release.yml`** — automated GitHub releases on version tags
-- **`flut upgrade` improvements** — version checking, changelog diff, remote auto-detection
+- **Version check in `flut upgrade`** — query GitHub API for the latest tag and warn if already up to date before pulling
+- **`flut clean`** — remove generated files (`.gr.dart`, `.g.dart`) and optionally run `build_runner clean`
 - **ARCHITECTURE.md** — deep-dive into NTECH-SERVICES clean architecture conventions
 - **Documentation site** — GitHub Pages with full command reference
 
@@ -171,30 +188,31 @@ source completions/flut.zsh
 
 ```
 ✅ Phase 1 (Foundation)           ← COMPLETED
-   ├── BATS test suite (97 tests)
+   ├── BATS test suite (109 tests)
    ├── GitHub CI (lint + test + integration)
    └── CONTRIBUTING.md
 
-✅ Phase 2 (Unique Value)        ← COMPLETED
-   ├── ✅ flut check  — architecture audit
-   ├── ✅ flut doctor — project health
-   ├── ✅ flut generate sub-commands
-   └── 📋 GitHub Release workflow
+✅ Phase 2 (Commands)             ← COMPLETED
+   ├── flut check  — architecture audit
+   ├── flut doctor — project health
+   └── flut generate sub-commands
 
-📋 Phase 3 (DX)
-   ├── Shell completions
-   ├── flut upgrade improvements
-   └── More documentation
+✅ Phase 3 (DX & Docs)            ← COMPLETED
+   ├── Shell completions (bash + zsh)
+   ├── Versioning (VERSION file, --version flag, release workflow)
+   ├── flut upgrade improvements (chmod fix, version display, changelog)
+   └── Documentation (README badges, ARCHITECTURE.md, docs/commands.md, docs/faq.md)
 
-📋 Phase 4 (Polish)
-   └── Release workflow, ARCHITECTURE.md, docs site
+📋 Phase 4 (Advanced)            ← NEXT
+   ├── flut upgrade — GitHub API version check
+   └── flut clean command
 ```
 
 ---
 
 ## How to Contribute
 
-1. Pick an item from **Phase 2** above
+1. Pick an item from **Phase 4** above
 2. Create a branch: `git checkout -b feat/your-change`
 3. Implement the feature
 4. Add/update tests in `tests/`
