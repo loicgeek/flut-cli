@@ -1492,6 +1492,1022 @@ cmd_upgrade() {
 }
 
 # ==============================================================================
+#  COMMAND: check — Architecture Audit
+# ==============================================================================
+
+cmd_check() {
+  local warnings=0
+  local errors=0
+
+  # ── helpers for internal check functions ────────────────────────────────────
+  # Note: use $((var + 1)) instead of var=$((var + 1)) because with set -e,
+  # errors=$((errors + 1)) exits the script when errors is 0 (returns old value 0 = falsy).
+  _check_pass() { log_success "$1"; }
+  _check_err()  { errors=$((errors + 1)); log_error "$1"; }
+  _check_warn() { warnings=$((warnings + 1)); log_warning "$1"; }
+
+  # ── Check 1: Feature structure ─────────────────────────────────────────────
+  _check_1_feature_structure() {
+    local features=()
+    for f in lib/features/*/; do
+      [[ -d "$f" ]] || continue
+      features+=("$(basename "$f")")
+    done
+
+    if [[ ${#features[@]} -eq 0 ]]; then
+      log_info "No features found — skipping feature structure check."
+      return 0
+    fi
+
+    local total_err=0
+    for feat in "${features[@]}"; do
+      local missing=()
+      [[ -d "lib/features/$feat/business_logic"       ]] || missing+=("business_logic")
+      [[ -d "lib/features/$feat/data"                 ]] || missing+=("data")
+      [[ -d "lib/features/$feat/data/models"          ]] || missing+=("data/models")
+      [[ -d "lib/features/$feat/data/repositories"    ]] || missing+=("data/repositories")
+      [[ -d "lib/features/$feat/presentation"         ]] || missing+=("presentation")
+      [[ -d "lib/features/$feat/presentation/screens" ]] || missing+=("presentation/screens")
+      [[ -d "lib/features/$feat/presentation/router"  ]] || missing+=("presentation/router")
+      [[ -d "lib/features/$feat/presentation/widgets" ]] || missing+=("presentation/widgets")
+
+      if [[ ${#missing[@]} -gt 0 ]]; then
+        _check_err "$feat — missing required dir(s): ${missing[*]}"
+        total_err=$((total_err + 1))
+      fi
+    done
+
+    if [[ $total_err -eq 0 ]]; then
+      _check_pass "Feature structure (${#features[@]} features)"
+    fi
+  }
+
+  # ── Check 2: State is sealed ───────────────────────────────────────────────
+  _check_2_sealed_states() {
+    local files=()
+    while IFS= read -r -d '' f; do
+      files+=("$f")
+    done < <(find lib/ -name '*_state.dart' -print0 2>/dev/null)
+
+    local total=${#files[@]}
+    local valid=0
+    local err=0
+
+    for f in "${files[@]}"; do
+      if grep -q 'sealed class' "$f" 2>/dev/null; then
+        valid=$((valid + 1))
+      else
+        _check_err "${f#lib/} — state file does not declare a sealed class"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      if [[ $total -eq 0 ]]; then
+        log_info "No state files found — skipping sealed state check."
+      else
+        _check_pass "Sealed states ($valid/$total valid)"
+      fi
+    fi
+  }
+
+  # ── Check 3: No banned codegen packages ────────────────────────────────────
+  _check_3_banned_codegen() {
+    if [[ ! -f "pubspec.yaml" ]]; then
+      _check_warn "pubspec.yaml not found — cannot check for banned packages"
+      return
+    fi
+
+    local err=0
+    if grep -qE '^[[:space:]]*freezed[[:space:]]*$|freezed:' pubspec.yaml 2>/dev/null; then
+      _check_warn "Banned package 'freezed' found in pubspec.yaml"
+      err=$((err + 1))
+    fi
+    if grep -qE '^[[:space:]]*json_serializable[[:space:]]*$|json_serializable:' pubspec.yaml 2>/dev/null; then
+      _check_warn "Banned package 'json_serializable' found in pubspec.yaml"
+      err=$((err + 1))
+    fi
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "No banned packages"
+    fi
+  }
+
+  # ── Check 4: Layer boundaries ──────────────────────────────────────────────
+  _check_4_layer_boundaries() {
+    local files=()
+    while IFS= read -r -d '' f; do
+      files+=("$f")
+    done < <(find lib/features/*/presentation -name '*.dart' -print0 2>/dev/null)
+
+    if [[ ${#files[@]} -eq 0 ]]; then
+      log_info "No presentation files found — skipping layer boundary check."
+      return
+    fi
+
+    local err=0
+    for f in "${files[@]}"; do
+      local feat
+      feat="$(echo "$f" | sed 's|lib/features/\([^/]*\).*|\1|')"
+      local rel="${f#lib/}"
+      if grep -qE "import.*data/" "$f" 2>/dev/null; then
+        _check_err "$feat — $rel imports data/ directly"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "Layer boundaries — no presentation files import data/ directly"
+    fi
+  }
+
+  # ── Check 5: Router registration ───────────────────────────────────────────
+  _check_5_router_registration() {
+    local screens=()
+    while IFS= read -r -d '' f; do
+      screens+=("$f")
+    done < <(find lib/features -path '*/presentation/screens/*.dart' -print0 2>/dev/null)
+
+    if [[ ${#screens[@]} -eq 0 ]]; then
+      log_info "No screens found — skipping router registration check."
+      return
+    fi
+
+    if [[ ! -f "lib/core/router/app_router.dart" ]]; then
+      _check_warn "lib/core/router/app_router.dart not found — cannot verify router registration"
+      return
+    fi
+
+    local router_content
+    router_content=$(cat "lib/core/router/app_router.dart" 2>/dev/null)
+    local total=${#screens[@]}
+    local registered=0
+    local err=0
+
+    for f in "${screens[@]}"; do
+      local basename
+      basename="$(basename "$f" .dart)"
+      # AutoRoute converts auth_screen -> AuthRoute (replaceInRouteName: 'Screen,Route')
+      # Convert snake_case to PascalCase (reusing to_pascal) then append Route
+      local name_no_suffix
+      name_no_suffix=$(echo "$basename" | sed 's/_screen$//' | sed 's/_route$//')
+      local pascal
+      pascal="$(to_pascal "$name_no_suffix")Route"
+
+      if echo "$router_content" | grep -q "$pascal"; then
+        registered=$((registered + 1))
+      else
+        local rel="${f#lib/}"
+        _check_warn "$rel — may not be registered in app_router.dart (seeking: $pascal)"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "Router registration ($registered/$total screens)"
+    fi
+  }
+
+  # ── Check 6: DI registration ───────────────────────────────────────────────
+  _check_6_di_registration() {
+    if [[ ! -f "lib/core/di/service_locator.dart" ]]; then
+      _check_warn "lib/core/di/service_locator.dart not found — skipping DI check"
+      return
+    fi
+
+    local sl_content
+    sl_content=$(cat "lib/core/di/service_locator.dart" 2>/dev/null)
+    local err=0
+    local total=0
+    local matched=0
+
+    # Find all sl.registerSingleton<...> and sl.registerFactory<...>
+    local registrations=()
+    while IFS= read -r line; do
+      registrations+=("$line")
+    done < <(echo "$sl_content" | grep -oE 'sl\.(registerSingleton|registerFactory)<[A-Za-z0-9_]+>' || true)
+
+    total=${#registrations[@]}
+
+    for reg in "${registrations[@]}"; do
+      local class_name
+      class_name=$(echo "$reg" | sed 's/.*<//; s/>.*//')
+      local file
+      file=$(find lib/ -name "${class_name}.dart" -print -quit 2>/dev/null)
+      if [[ -n "$file" ]]; then
+        matched=$((matched + 1))
+      else
+        _check_warn "$class_name is registered in service_locator.dart but no corresponding file found"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      if [[ $total -eq 0 ]]; then
+        log_info "No DI registrations found — skipping DI check."
+      else
+        _check_pass "DI registration ($matched/$total registrations have matching files)"
+      fi
+    fi
+  }
+
+  # ── Check 7: Translation keys ──────────────────────────────────────────────
+  _check_7_translation_keys() {
+    if [[ ! -f "assets/translations/en.json" ]]; then
+      _check_warn "assets/translations/en.json not found — skipping translation key check"
+      return
+    fi
+    if [[ ! -f "assets/translations/fr.json" ]]; then
+      _check_warn "assets/translations/fr.json not found — skipping translation key check"
+      return
+    fi
+
+    local en_content fr_content
+    en_content=$(cat "assets/translations/en.json" 2>/dev/null)
+    fr_content=$(cat "assets/translations/fr.json" 2>/dev/null)
+
+    local err=0
+    local found=0
+
+    # Find all tr('...') or tr("...") calls in Dart files
+    local tr_keys=()
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      tr_keys+=("$key")
+    done < <(grep -rohE "tr\\([\"']([^\"']+)[\"'']" --include='*.dart' lib/ 2>/dev/null | sed "s/tr(\"//; s/tr('//; s/\"$//; s/'$//; s/)$//" | sort -u || true)
+
+    if [[ ${#tr_keys[@]} -eq 0 ]]; then
+      log_info "No tr() calls found — skipping translation key check."
+      return
+    fi
+
+    for key in "${tr_keys[@]}"; do
+      local escaped
+      escaped=$(echo "$key" | sed 's/\././g')
+      found=$((found + 1))
+      local in_en=0
+      local in_fr=0
+
+      if echo "$en_content" | grep -qF "\"$key\""; then
+        in_en=1
+      fi
+      if echo "$fr_content" | grep -qF "\"$key\""; then
+        in_fr=1
+      fi
+
+      if [[ $in_en -eq 0 ]] && [[ $in_fr -eq 0 ]]; then
+        _check_warn "Translation key \"$key\" missing from both en.json and fr.json"
+        err=$((err + 1))
+      elif [[ $in_en -eq 0 ]]; then
+        _check_warn "Translation key \"$key\" missing from en.json"
+        err=$((err + 1))
+      elif [[ $in_fr -eq 0 ]]; then
+        _check_warn "Translation key \"$key\" missing from fr.json"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "Translation keys ($found keys found in both en.json and fr.json)"
+    fi
+  }
+
+  # ── Check 8: No orphaned generated files ───────────────────────────────────
+  _check_8_orphaned_generated() {
+    local gr_files=()
+    while IFS= read -r -d '' f; do
+      gr_files+=("$f")
+    done < <(find lib/ -name '*.gr.dart' -print0 2>/dev/null)
+
+    if [[ ${#gr_files[@]} -eq 0 ]]; then
+      log_info "No .gr.dart files found — skipping orphaned generated file check."
+      return
+    fi
+
+    local err=0
+    for f in "${gr_files[@]}"; do
+      local source
+      source="${f%.gr.dart}.dart"
+      if [[ ! -f "$source" ]]; then
+        _check_warn "${f#lib/} — generated file exists but source ${source#lib/} has been deleted"
+        err=$((err + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "No orphaned generated files (${#gr_files[@]} .gr.dart files)"
+    fi
+  }
+
+  # ── Check 9: Cubit/Bloc convention ─────────────────────────────────────────
+  _check_9_cubit_convention() {
+    local cubit_files=()
+    while IFS= read -r -d '' f; do
+      cubit_files+=("$f")
+    done < <(find lib/ \( -name '*_cubit.dart' -o -name '*_bloc.dart' \) -print0 2>/dev/null)
+
+    if [[ ${#cubit_files[@]} -eq 0 ]]; then
+      log_info "No Cubit/Bloc files found — skipping convention check."
+      return
+    fi
+
+    local err=0
+    local total=0
+    local clean=0
+
+    for f in "${cubit_files[@]}"; do
+      total=$((total + 1))
+      local content
+      content=$(cat "$f" 2>/dev/null)
+      # Check if file uses try/catch
+      if echo "$content" | grep -qE 'catch\s*\('; then
+        local rel="${f#lib/}"
+        # Check if it catches AppFailure or generic Exception
+        if echo "$content" | grep -q 'catch.*AppFailure' || echo "$content" | grep -q 'on AppFailure'; then
+          clean=$((clean + 1))
+        elif echo "$content" | grep -qE 'catch\s*\(\s*e\s*\)|catch\s*\(\s*_\s*\)'; then
+          # A bare catch — might be catching generic Exception
+          # Check if it's using AppFailure inside
+          if echo "$content" | grep -q 'AppFailure'; then
+            clean=$((clean + 1))
+          else
+            _check_err "$rel — uses generic Exception catch instead of AppFailure"
+            err=$((err + 1))
+          fi
+        else
+          clean=$((clean + 1))
+        fi
+      else
+        clean=$((clean + 1))
+      fi
+    done
+
+    if [[ $err -eq 0 ]]; then
+      _check_pass "Cubit/Bloc convention ($clean/$total use AppFailure correctly)"
+    fi
+  }
+
+  # ── Run all checks ─────────────────────────────────────────────────────────
+  log_section "Architecture Audit"
+
+  echo ""
+  _check_1_feature_structure
+  _check_2_sealed_states
+  _check_3_banned_codegen
+  _check_4_layer_boundaries
+  _check_5_router_registration
+  _check_6_di_registration
+  _check_7_translation_keys
+  _check_8_orphaned_generated
+  _check_9_cubit_convention
+
+  # ── Summary ────────────────────────────────────────────────────────────────
+  echo ""
+  if [[ $errors -eq 0 && $warnings -eq 0 ]]; then
+    log_success "All checks passed — clean architecture!"
+  elif [[ $errors -eq 0 ]]; then
+    echo -e "  ${YELLOW}$warnings warning(s)${RESET} — see details above"
+  else
+    echo -e "  ${YELLOW}$warnings warning(s), ${RED}$errors error(s)${RESET} — see details above"
+  fi
+  echo ""
+
+  # Exit codes: 0=all clear, 1=warnings only, 2=errors found
+  if [[ $errors -gt 0 ]]; then
+    exit 2
+  elif [[ $warnings -gt 0 ]]; then
+    exit 1
+  fi
+}
+
+# ==============================================================================
+#  COMMAND: doctor — Project Health
+# ==============================================================================
+
+cmd_doctor() {
+  local issues=0
+
+  # Helper: use the same prefix style as the rest of the CLI
+  _doc_pass() { log_success "$1"; }
+  _doc_warn() { issues=$((issues + 1)); log_warning "$1"; }
+  _doc_info() { log_info "$1"; }
+
+  log_section "Project Health"
+  echo ""
+
+  # ── Check 1: Flutter SDK ───────────────────────────────────────────────────
+  if command -v flutter &>/dev/null; then
+    local version_line
+    version_line=$(flutter --version 2>/dev/null | head -1)
+    local version
+    version=$(echo "$version_line" | sed -nE 's/.*Flutter ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+    if [[ -n "$version" ]]; then
+      _doc_pass "Flutter SDK $version"
+    else
+      _doc_pass "Flutter SDK detected (version unknown)"
+    fi
+  else
+    _doc_warn "Flutter SDK not found in PATH — install flutter to use this CLI"
+  fi
+
+  # ── Check 2: Project root ──────────────────────────────────────────────────
+  if [[ -f "pubspec.yaml" ]]; then
+    local pkg_name
+    pkg_name=$(grep -E '^name:' pubspec.yaml | head -1 | sed 's/name:[[:space:]]*//')
+    if [[ -n "$pkg_name" ]]; then
+      _doc_pass "Project root detected — $pkg_name"
+    else
+      _doc_warn "pubspec.yaml found but missing 'name:' field"
+    fi
+  else
+    _doc_warn "pubspec.yaml not found — not a Flutter project root"
+  fi
+
+  # ── Check 3: Required packages ─────────────────────────────────────────────
+  _check_required_packages() {
+    if [[ ! -f "pubspec.yaml" ]]; then
+      _doc_warn "Cannot check required packages — pubspec.yaml not found"
+      return
+    fi
+
+    local required=(
+      "flutter_bloc"
+      "equatable"
+      "get_it"
+      "auto_route"
+      "dio"
+      "connectivity_plus"
+      "flutter_secure_storage"
+      "easy_localization"
+      "logger"
+      "intl"
+      "pretty_dio_logger"
+    )
+
+    local dev_required=(
+      "build_runner"
+      "auto_route_generator"
+    )
+
+    local missing=0
+    local found=0
+
+    for pkg in "${required[@]}"; do
+      if grep -qE "^[[:space:]]*${pkg}\b[[:space:]]*:" pubspec.yaml 2>/dev/null; then
+        found=$((found + 1))
+      else
+        missing=$((missing + 1))
+      fi
+    done
+
+    # Also check dev dependencies
+    local dev_found=0
+    local dev_missing=0
+    for pkg in "${dev_required[@]}"; do
+      if grep -qE "^[[:space:]]*${pkg}\b[[:space:]]*:" pubspec.yaml 2>/dev/null; then
+        dev_found=$((dev_found + 1))
+      else
+        dev_missing=$((dev_missing + 1))
+      fi
+    done
+
+    local total_runtime=${#required[@]}
+    local total_dev=${#dev_required[@]}
+    local total=$((total_runtime + total_dev))
+    local total_found=$((found + dev_found))
+
+    if [[ $missing -eq 0 && $dev_missing -eq 0 ]]; then
+      _doc_pass "Required packages ($total_found/$total)"
+    else
+      local msg=""
+      [[ $missing -gt 0 ]] && msg="$missing runtime package(s) missing"
+      [[ $dev_missing -gt 0 ]] && msg="$msg, $dev_missing dev package(s) missing"
+      _doc_warn "Required packages — $msg"
+    fi
+  }
+  _check_required_packages
+
+  # ── Check 4: Generated code ────────────────────────────────────────────────
+  _check_generated_code() {
+    local gr_count g_count
+    gr_count=$(find lib/ -name '*.gr.dart' -print 2>/dev/null | wc -l) || true
+    g_count=$(find lib/ -name '*.g.dart' -print 2>/dev/null | wc -l) || true
+    : "${gr_count:=0}" "${g_count:=0}"
+    local total_gen=$((gr_count + g_count))
+
+    if [[ $total_gen -gt 0 ]]; then
+      _doc_pass "Generated code found ($total_gen generated files)"
+    else
+      _doc_warn "Build runner not run — dart run build_runner build --delete-conflicting-outputs"
+    fi
+  }
+  _check_generated_code
+
+  # ── Check 5: Scaffold integrity ────────────────────────────────────────────
+  _check_scaffold_integrity() {
+    local required_dirs=(
+      "lib/core/config"
+      "lib/core/api/interceptors"
+      "lib/core/auth"
+      "lib/core/storage"
+      "lib/core/error"
+      "lib/core/bloc"
+      "lib/core/theme"
+      "lib/core/di"
+      "lib/core/router"
+      "lib/features"
+      "lib/shared/models"
+      "lib/shared/widgets"
+      "lib/shared/utils"
+      "assets/translations"
+    )
+
+    local required_files=(
+      "lib/main.dart"
+      "lib/main_dev.dart"
+      "lib/main_staging.dart"
+      "lib/main_prod.dart"
+      "lib/app.dart"
+      "lib/core/bootstrap.dart"
+      "lib/core/config/app_config.dart"
+      "lib/core/di/service_locator.dart"
+      "lib/core/router/app_router.dart"
+      "lib/core/api/api_client.dart"
+      "lib/core/api/api_endpoints.dart"
+      "lib/core/api/interceptors/auth_interceptor.dart"
+      "lib/core/api/interceptors/retry_interceptor.dart"
+      "lib/core/api/interceptors/connectivity_interceptor.dart"
+      "lib/core/storage/secure_storage.dart"
+      "lib/core/error/failures.dart"
+      "lib/core/error/exception_mapper.dart"
+      "lib/core/auth/auth_guard.dart"
+      "lib/core/bloc/app_bloc_observer.dart"
+      "lib/core/theme/app_theme.dart"
+      "lib/core/custom_transition_builders.dart"
+      "lib/shared/widgets/loading_shimmer.dart"
+      "lib/shared/widgets/empty_state.dart"
+      "lib/shared/widgets/error_state.dart"
+    )
+
+    local missing_dirs=0
+    local missing_files=0
+
+    for d in "${required_dirs[@]}"; do
+      [[ -d "$d" ]] || missing_dirs=$((missing_dirs + 1))
+    done
+
+    for f in "${required_files[@]}"; do
+      [[ -f "$f" ]] || missing_files=$((missing_files + 1))
+    done
+
+    if [[ $missing_dirs -eq 0 && $missing_files -eq 0 ]]; then
+      _doc_pass "Scaffold structure intact (${#required_dirs[@]} dirs, ${#required_files[@]} files)"
+    else
+      _doc_warn "Scaffold structure — $missing_dirs missing dir(s), $missing_files missing file(s)"
+    fi
+  }
+  _check_scaffold_integrity
+
+  # ── Check 6: Outdated packages ─────────────────────────────────────────────
+  _check_outdated_packages() {
+    if ! command -v flutter &>/dev/null; then
+      _doc_info "Skipping outdated packages check — flutter not in PATH"
+      return
+    fi
+
+    if [[ ! -f "pubspec.yaml" ]]; then
+      _doc_info "Skipping outdated packages check — no pubspec.yaml"
+      return
+    fi
+
+    # Run flutter pub outdated and count upgradable packages
+    local outdated_output
+    outdated_output=$(flutter pub outdated 2>/dev/null) || true
+    local upgradable
+    upgradable=$(echo "$outdated_output" | grep -cE '\*\s+[0-9]' 2>/dev/null || echo 0)
+
+    if [[ -n "$outdated_output" ]]; then
+      if [[ "$upgradable" -gt 0 ]]; then
+        _doc_info "$upgradable package(s) have updates available — run flutter pub outdated"
+      else
+        _doc_pass "All packages up to date"
+      fi
+    else
+      _doc_info "Could not check outdated packages — flutter pub outdated failed"
+    fi
+  }
+  _check_outdated_packages
+
+  # ── Check 7: Git ───────────────────────────────────────────────────────────
+  if [[ -d ".git" ]]; then
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    local remote
+    remote=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ -n "$remote" ]]; then
+      _doc_pass "Git initialized — on branch $branch, remote configured"
+    else
+      _doc_info "Git initialized — on branch $branch, no remote configured"
+    fi
+  else
+    _doc_info "Git not initialized — run git init to start tracking"
+  fi
+
+  # ── Summary ────────────────────────────────────────────────────────────────
+  echo ""
+  if [[ $issues -eq 0 ]]; then
+    log_success "Project looks healthy!"
+  else
+    echo -e "  ${YELLOW}$issues issue(s) found${RESET} — see details above"
+  fi
+  echo ""
+}
+
+# ==============================================================================
+#  COMMAND: generate — Individual component generators
+# ==============================================================================
+
+cmd_generate() {
+  local type="${1:-}"
+  local feature="${2:-}"
+  local name="${3:-}"
+
+  # If name not given, default to feature name
+  if [[ -z "$name" ]]; then
+    name="$feature"
+  fi
+
+  if [[ -z "$type" || -z "$feature" ]]; then
+    log_error "Usage: flut generate <model|screen|repository|cubit|bloc> <feature> [name]"
+    echo ""
+    echo "  Examples:"
+    echo "    flut generate model auth"
+    echo "    flut generate model auth login_request"
+    echo "    flut generate screen auth"
+    echo "    flut generate repository auth"
+    echo "    flut generate cubit auth"
+    echo "    flut generate bloc auth"
+    exit 1
+  fi
+
+  if [[ ! "$feature" =~ ^[a-z][a-z0-9_]*$ ]]; then
+    log_error "Feature name must be snake_case."
+    exit 1
+  fi
+
+  if [[ ! "$name" =~ ^[a-z][a-z0-9_]*$ ]]; then
+    log_error "Component name must be snake_case."
+    exit 1
+  fi
+
+  local BASE="lib/features/$feature"
+  if [[ ! -d "$BASE" ]]; then
+    log_error "Feature '$feature' does not exist at $BASE"
+    log_info "Create it first with: flut feature $feature"
+    exit 1
+  fi
+
+  local pascal
+  pascal=$(to_pascal "$name")
+  local feature_pascal
+  feature_pascal=$(to_pascal "$feature")
+
+  # Detect package name from pubspec.yaml
+  local pkg_name="your_app"
+  if [[ -f "pubspec.yaml" ]]; then
+    local parsed
+    parsed=$(grep -E '^name:' pubspec.yaml | head -1 | sed 's/name:[[:space:]]*//')
+    [[ -n "$parsed" ]] && pkg_name="$parsed"
+  fi
+
+  case "$type" in
+    model)
+      _gen_model
+      ;;
+    screen)
+      _gen_screen
+      ;;
+    repository)
+      _gen_repository
+      ;;
+    cubit)
+      _gen_cubit
+      ;;
+    bloc)
+      _gen_bloc
+      ;;
+    *)
+      log_error "Unknown type: $type"
+      echo "  Valid types: model, screen, repository, cubit, bloc"
+      exit 1
+      ;;
+  esac
+}
+
+# ── Generate: model ────────────────────────────────────────────────────────────
+_gen_model() {
+  mkf "$BASE/data/models/${name}_model.dart" "class ${pascal}Model {
+  const ${pascal}Model({
+    required this.id,
+    // TODO: add fields
+  });
+
+  final String id;
+  // TODO: add fields
+
+  factory ${pascal}Model.fromJson(Map<String, dynamic> json) {
+    return ${pascal}Model(
+      id: json['id'] as String,
+      // TODO: map fields
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        // TODO: map fields
+      };
+
+  ${pascal}Model copyWith({
+    String? id,
+    // TODO: add fields
+  }) {
+    return ${pascal}Model(id: id ?? this.id);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ${pascal}Model && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => '${pascal}Model(id: \$id)';
+}
+"
+  echo ""
+  log_section "Next steps for ${feature}.${name}_model"
+  echo ""
+  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
+  echo "     // ${pascal}Model used by ${feature_pascal}Repository"
+  echo ""
+  echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
+  echo "     // Add API endpoint for ${name}s if needed"
+  echo ""
+}
+
+# ── Generate: screen ───────────────────────────────────────────────────────────
+_gen_screen() {
+  mkf "$BASE/presentation/screens/${name}_screen.dart" "import 'package:auto_route/auto_route.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../../core/di/service_locator.dart';
+import '../../business_logic/${feature}_cubit.dart';
+import '../../business_logic/${feature}_state.dart';
+import '../../../../shared/widgets/empty_state.dart';
+import '../../../../shared/widgets/error_state.dart';
+import '../../../../shared/widgets/loading_shimmer.dart';
+
+@RoutePage()
+class ${pascal}Screen extends StatelessWidget {
+  const ${pascal}Screen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => sl<${feature_pascal}Cubit>()..load(),
+      child: const _${pascal}View(),
+    );
+  }
+}
+
+class _${pascal}View extends StatelessWidget {
+  const _${pascal}View();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('${name}.title'.tr())),
+      body: BlocConsumer<${feature_pascal}Cubit, ${feature_pascal}State>(
+        listener: (context, state) {
+          if (state is ${feature_pascal}Error) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(state.message)));
+          }
+        },
+        builder: (context, state) => switch (state) {
+          ${feature_pascal}Initial() => const SizedBox.shrink(),
+          ${feature_pascal}Loading() => const Center(child: LoadingShimmer()),
+          ${feature_pascal}Error()   => ErrorState(
+              message: (state as ${feature_pascal}Error).message,
+              onRetry: () => context.read<${feature_pascal}Cubit>().load(),
+            ),
+          ${feature_pascal}Loaded()  => _${pascal}List(
+              items: (state as ${feature_pascal}Loaded).items,
+            ),
+        },
+      ),
+    );
+  }
+}
+
+class _${pascal}List extends StatelessWidget {
+  const _${pascal}List({required this.items});
+  final List<dynamic> items;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return EmptyState(message: '${name}.empty'.tr());
+    return ListView.builder(
+      itemCount: items.length,
+      itemBuilder: (context, i) => ListTile(title: Text(items[i].id)),
+      // TODO: build item UI
+    );
+  }
+}
+"
+  echo ""
+  log_section "Next steps for ${feature}.${name}_screen"
+  echo ""
+  echo -e "  ${YELLOW}1. lib/core/router/app_router.dart${RESET}"
+  echo "     AutoRoute(page: ${pascal}Route.page),"
+  echo ""
+  echo -e "  ${YELLOW}2. assets/translations/fr.json  &  en.json${RESET}"
+  echo "     \"${name}\": { \"title\": \"...\", \"empty\": \"...\" }"
+  echo ""
+}
+
+# ── Generate: repository ───────────────────────────────────────────────────────
+_gen_repository() {
+  mkf "$BASE/data/repositories/${name}_repository.dart" "import 'package:dio/dio.dart';
+
+import '../../../../core/api/api_endpoints.dart';
+import '../../../../core/error/exception_mapper.dart';
+import '../../../../core/error/failures.dart';
+import '../models/${name}_model.dart';
+
+class ${pascal}Repository {
+  const ${pascal}Repository(this._dio);
+  final Dio _dio;
+
+  Future<List<${pascal}Model>> get${pascal}List() async {
+    try {
+      final response = await _dio.get(ApiEndpoints.${name}s);
+      return (response.data as List)
+          .map((e) => ${pascal}Model.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioExceptionToFailure(e);
+    } catch (e) {
+      throw AppFailure.unexpected(message: e.toString());
+    }
+  }
+}
+"
+  echo ""
+  log_section "Next steps for ${feature}.${name}_repository"
+  echo ""
+  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
+  echo "     sl.registerSingleton<${pascal}Repository>(${pascal}Repository(sl()));"
+  echo ""
+  echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
+  echo "     static const ${name}s = '/${name}s';"
+  echo ""
+}
+
+# ── Generate: cubit ────────────────────────────────────────────────────────────
+_gen_cubit() {
+  # Check if state file exists, create if not
+  local state_file="$BASE/business_logic/${feature}_state.dart"
+  if [[ ! -f "$state_file" ]]; then
+    mkf "$state_file" "import '../data/models/${feature}_model.dart';
+
+sealed class ${feature_pascal}State { const ${feature_pascal}State(); }
+
+final class ${feature_pascal}Initial extends ${feature_pascal}State { const ${feature_pascal}Initial(); }
+final class ${feature_pascal}Loading extends ${feature_pascal}State { const ${feature_pascal}Loading(); }
+final class ${feature_pascal}Loaded  extends ${feature_pascal}State {
+  const ${feature_pascal}Loaded(this.items);
+  final List<${feature_pascal}Model> items;
+}
+final class ${feature_pascal}Error extends ${feature_pascal}State {
+  const ${feature_pascal}Error(this.message);
+  final String message;
+}
+"
+  fi
+
+  mkf "$BASE/business_logic/${name}_cubit.dart" "import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../../core/error/failures.dart';
+import '../data/repositories/${name}_repository.dart';
+import '${feature}_state.dart';
+
+class ${pascal}Cubit extends Cubit<${feature_pascal}State> {
+  ${pascal}Cubit(this._repository) : super(const ${feature_pascal}Initial());
+  final ${pascal}Repository _repository;
+
+  Future<void> load() async {
+    emit(const ${feature_pascal}Loading());
+    try {
+      final items = await _repository.get${pascal}List();
+      if (!isClosed) emit(${feature_pascal}Loaded(items));
+    } on AppFailure catch (f) {
+      if (!isClosed) emit(${feature_pascal}Error(f.userMessage));
+    }
+  }
+}
+"
+  echo ""
+  log_section "Next steps for ${feature}.${name}_cubit"
+  echo ""
+  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
+  echo "     sl.registerFactory<${pascal}Cubit>(() => ${pascal}Cubit(sl()));"
+  echo ""
+  echo -e "  ${YELLOW}2. lib/core/router/app_router.dart${RESET}"
+  echo "     Add a route that provides ${pascal}Cubit"
+  echo ""
+}
+
+# ── Generate: bloc ─────────────────────────────────────────────────────────────
+_gen_bloc() {
+  # Check if state file exists, create if not
+  local state_file="$BASE/business_logic/${feature}_state.dart"
+  if [[ ! -f "$state_file" ]]; then
+    mkf "$state_file" "import '../data/models/${feature}_model.dart';
+
+sealed class ${feature_pascal}State { const ${feature_pascal}State(); }
+
+final class ${feature_pascal}Initial extends ${feature_pascal}State { const ${feature_pascal}Initial(); }
+final class ${feature_pascal}Loading extends ${feature_pascal}State { const ${feature_pascal}Loading(); }
+final class ${feature_pascal}Loaded  extends ${feature_pascal}State {
+  const ${feature_pascal}Loaded(this.items);
+  final List<${feature_pascal}Model> items;
+}
+final class ${feature_pascal}Error extends ${feature_pascal}State {
+  const ${feature_pascal}Error(this.message);
+  final String message;
+}
+"
+  fi
+
+  mkf "$BASE/business_logic/${name}_event.dart" "sealed class ${pascal}Event { const ${pascal}Event(); }
+
+final class ${pascal}Load    extends ${pascal}Event { const ${pascal}Load(); }
+final class ${pascal}Refresh extends ${pascal}Event { const ${pascal}Refresh(); }
+// TODO: add events
+"
+
+  mkf "$BASE/business_logic/${name}_bloc.dart" "import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../../core/error/failures.dart';
+import '../data/repositories/${name}_repository.dart';
+import '${name}_event.dart';
+import '${feature}_state.dart';
+
+class ${pascal}Bloc extends Bloc<${pascal}Event, ${feature_pascal}State> {
+  ${pascal}Bloc(this._repository) : super(const ${feature_pascal}Initial()) {
+    on<${pascal}Load>(_onLoad);
+    on<${pascal}Refresh>(_onRefresh);
+  }
+
+  final ${pascal}Repository _repository;
+
+  Future<void> _onLoad(${pascal}Load event, Emitter<${feature_pascal}State> emit) async {
+    emit(const ${feature_pascal}Loading());
+    try {
+      final items = await _repository.get${pascal}List();
+      emit(${feature_pascal}Loaded(items));
+    } on AppFailure catch (f) {
+      emit(${feature_pascal}Error(f.userMessage));
+    }
+  }
+
+  Future<void> _onRefresh(${pascal}Refresh event, Emitter<${feature_pascal}State> emit) async {
+    try {
+      final items = await _repository.get${pascal}List();
+      emit(${feature_pascal}Loaded(items));
+    } on AppFailure catch (f) {
+      emit(${feature_pascal}Error(f.userMessage));
+    }
+  }
+}
+"
+  echo ""
+  log_section "Next steps for ${feature}.${name}_bloc"
+  echo ""
+  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
+  echo "     sl.registerFactory<${pascal}Bloc>(() => ${pascal}Bloc(sl()));"
+  echo ""
+  echo -e "  ${YELLOW}2. lib/core/router/app_router.dart${RESET}"
+  echo "     Add a route that provides ${pascal}Bloc"
+  echo ""
+}
+
+# ==============================================================================
 #  ENTRYPOINT
 # ==============================================================================
 usage() {
@@ -1503,6 +2519,9 @@ usage() {
   echo -e "  ${CYAN}flut feature <n> --bloc${RESET}              Add feature (Bloc)"
   echo -e "  ${CYAN}flut feature <n> --service${RESET}           Add feature with Service layer"
   echo -e "  ${CYAN}flut feature <n> --bloc --service${RESET}    Bloc + Service layer"
+  echo -e "  ${CYAN}flut generate${RESET}                              Generate individual components"
+  echo -e "  ${CYAN}flut check${RESET}                                  Audit architecture conventions"
+  echo -e "  ${CYAN}flut doctor${RESET}                                 Check project health"
   echo -e "  ${CYAN}flut upgrade${RESET}                               Upgrade flut-cli to latest version"
   echo ""
   echo "  Examples:"
@@ -1511,14 +2530,25 @@ usage() {
   echo "    flut feature payment --bloc"
   echo "    flut feature order --service"
   echo "    flut feature checkout --bloc --service"
+  echo "    flut generate model auth"
+  echo "    flut generate model auth login_request"
+  echo "    flut generate screen auth"
+  echo "    flut generate repository auth"
+  echo "    flut generate cubit auth"
+  echo "    flut generate bloc auth"
+  echo "    flut check"
+  echo "    flut doctor"
   echo "    flut upgrade"
   echo ""
 }
 
 case "${1:-}" in
-  init)    cmd_init ;;
-  feature) shift; cmd_feature "$@" ;;
-  upgrade) cmd_upgrade ;;
+  init)     cmd_init ;;
+  feature)  shift; cmd_feature "$@" ;;
+  generate) shift; cmd_generate "$@" ;;
+  check)    cmd_check ;;
+  doctor)   cmd_doctor ;;
+  upgrade)  cmd_upgrade ;;
   -h|--help|"") usage ;;
   *) log_error "Unknown command: $1"; usage; exit 1 ;;
 esac

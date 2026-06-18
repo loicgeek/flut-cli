@@ -1,0 +1,97 @@
+# =============================================================================
+#  CI workflow for flut-cli
+#
+#  Runs on every push and pull request to main.
+#  - Lints shell scripts with shellcheck
+#  - Runs BATS test suite
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.sh"
+      - "tests/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "*.sh"
+      - "tests/**"
+      - ".github/workflows/ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: shellcheck --shell=bash flut.sh install.sh
+
+  test:
+    name: Run BATS tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Run BATS test suite
+        run: bats --print-output-on-failure tests/
+
+  integration:
+    name: Integration tests (with Flutter)
+    runs-on: ubuntu-latest
+    # Only run on PRs and pushes to main — skip for forks without Flutter setup
+    if: github.repository == 'loicgeek/flut-cli'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Create test Flutter project
+        run: flutter create --project-name test_app /tmp/flutter_test_project
+
+      - name: Run flut init in test project
+        run: |
+          bash flut.sh init
+        working-directory: /tmp/flutter_test_project
+
+      - name: Verify scaffold created core directories
+        run: |
+          test -d lib/core && echo "✓ core/"
+          test -d lib/features && echo "✓ features/"
+          test -d lib/shared && echo "✓ shared/"
+          test -d assets/translations && echo "✓ translations/"
+        working-directory: /tmp/flutter_test_project
+
+      - name: Run flut feature in test project
+        run: |
+          bash flut.sh feature auth
+          test -d lib/features/auth && echo "✓ feature created"
+        working-directory: /tmp/flutter_test_project

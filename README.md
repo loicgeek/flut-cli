@@ -65,10 +65,20 @@ rm -rf ~/.flut-cli
 ## Usage
 
 ```
-flut init                    Init full lib/ scaffold + install packages
-flut feature <name>          Add a feature (Cubit)
-flut feature <name> --bloc   Add a feature (Bloc)
-flut --help                  Show this help
+flut init                               Init full lib/ scaffold + install packages
+flut feature <name>                     Add a feature (Cubit)
+flut feature <name> --bloc              Add a feature (Bloc)
+flut feature <name> --service           Add a feature with Service layer
+flut feature <name> --bloc --service    Add a feature (Bloc + Service)
+flut generate model <feat> [name]       Generate a model into an existing feature
+flut generate screen <feat> [name]      Generate a screen into an existing feature
+flut generate repository <feat> [name]  Generate a repository
+flut generate cubit <feat> [name]       Generate a Cubit + state
+flut generate bloc <feat> [name]        Generate a Bloc + events + state
+flut check                              Audit architecture conventions
+flut doctor                             Check project health
+flut upgrade                            Update flut-cli to latest version
+flut --help                             Show this help
 ```
 
 > **Important:** always run `flut` from the **root of your Flutter project**
@@ -130,7 +140,7 @@ dev: build_runner  auto_route_generator
 
 ---
 
-### `flut feature <name> [--bloc]`
+### `flut feature <name> [--bloc] [--service]`
 
 Scaffolds a complete feature slice under `lib/features/<name>/`.
 
@@ -142,7 +152,8 @@ lib/features/<name>/
 │   └── <name>_bloc.dart          ← with --bloc (+ <name>_event.dart)
 ├── data/
 │   ├── models/<name>_model.dart  ← plain Dart class, manual fromJson/toJson
-│   └── repositories/<name>_repository.dart
+│   ├── repositories/<name>_repository.dart
+│   └── services/<name>_service.dart  ← with --service
 └── presentation/
     ├── router/
     │   └── <name>_router_module.dart   ← per-feature AutoRouterConfig
@@ -161,6 +172,55 @@ lib/features/<name>/
 
 ---
 
+### `flut generate`
+
+Generates individual components into an existing feature (not full feature slices).
+
+| Sub-command | Example | Creates |
+|---|---|---|
+| `model` | `flut generate model auth login_request` | `login_request_model.dart` with `fromJson`/`toJson`/`copyWith` |
+| `screen` | `flut generate screen auth login` | `login_screen.dart` with `BlocProvider`, `BlocConsumer`, `@RoutePage()` |
+| `repository` | `flut generate repository auth custom` | `custom_repository.dart` with Dio + AppFailure |
+| `cubit` | `flut generate cubit auth login` | `login_cubit.dart` + shared state |
+| `bloc` | `flut generate bloc auth login` | `login_bloc.dart` + `login_event.dart` + shared state |
+
+If the name is omitted, it defaults to the feature name (e.g., `flut generate model auth` creates `auth_model.dart`).
+
+---
+
+### `flut check`
+
+Audits the Flutter project for architecture convention violations.
+
+**Exit codes:** `0` = all clear, `1` = warnings, `2` = errors
+
+**Checks performed:**
+1. Feature structure completeness
+2. State classes are sealed
+3. No banned codegen packages (`freezed`, `json_serializable`)
+4. Layer boundaries (presentation doesn't import data/ directly)
+5. Router registration (screens referenced in app_router.dart)
+6. DI registration (registered classes have corresponding files)
+7. Translation keys (tr() calls exist in both en.json and fr.json)
+8. No orphaned generated files
+9. Cubit/Bloc convention (uses AppFailure, not generic Exception)
+
+---
+
+### `flut doctor`
+
+Analyzes project health and reports status.
+
+**Checks performed:**
+1. Flutter SDK availability and version
+2. Project root (valid pubspec.yaml)
+3. Required packages (11 runtime + 2 dev dependencies)
+4. Generated code (build runner has been run)
+5. Scaffold integrity (expected dirs and files exist)
+6. Outdated packages (flutter pub outdated summary)
+7. Git initialization status
+
+---
 
 ### Service layer (`--service`)
 
