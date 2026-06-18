@@ -60,3 +60,11 @@ else
 fi
 
 echo ""
+echo -e "${BOLD}  Shell completions${RESET}"
+echo ""
+echo -e "  ${CYAN}bash${RESET} — add to ~/.bashrc:"
+echo -e "    source ${DEST}/completions/flut.bash"
+echo ""
+echo -e "  ${CYAN}zsh${RESET}  — add to ~/.zshrc:"
+echo -e "    source ${DEST}/completions/flut.zsh"
+echo ""

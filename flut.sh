@@ -1553,6 +1553,11 @@ cmd_check() {
     local valid=0
     local err=0
 
+    if [[ $total -eq 0 ]]; then
+      log_info "No state files found — skipping sealed state check."
+      return
+    fi
+
     for f in "${files[@]}"; do
       if grep -q 'sealed class' "$f" 2>/dev/null; then
         valid=$((valid + 1))
@@ -1563,11 +1568,7 @@ cmd_check() {
     done
 
     if [[ $err -eq 0 ]]; then
-      if [[ $total -eq 0 ]]; then
-        log_info "No state files found — skipping sealed state check."
-      else
-        _check_pass "Sealed states ($valid/$total valid)"
-      fi
+      _check_pass "Sealed states ($valid/$total valid)"
     fi
   }
 
@@ -1689,6 +1690,11 @@ cmd_check() {
 
     total=${#registrations[@]}
 
+    if [[ $total -eq 0 ]]; then
+      log_info "No DI registrations found — skipping DI check."
+      return
+    fi
+
     for reg in "${registrations[@]}"; do
       local class_name
       class_name=$(echo "$reg" | sed 's/.*<//; s/>.*//')
@@ -1703,11 +1709,7 @@ cmd_check() {
     done
 
     if [[ $err -eq 0 ]]; then
-      if [[ $total -eq 0 ]]; then
-        log_info "No DI registrations found — skipping DI check."
-      else
-        _check_pass "DI registration ($matched/$total registrations have matching files)"
-      fi
+      _check_pass "DI registration ($matched/$total registrations have matching files)"
     fi
   }
 
@@ -1898,7 +1900,7 @@ cmd_doctor() {
   # ── Check 1: Flutter SDK ───────────────────────────────────────────────────
   if command -v flutter &>/dev/null; then
     local version_line
-    version_line=$(flutter --version 2>/dev/null | head -1)
+    version_line=$(flutter --version 2>/dev/null | head -1 || true)
     local version
     version=$(echo "$version_line" | sed -nE 's/.*Flutter ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
     if [[ -n "$version" ]]; then

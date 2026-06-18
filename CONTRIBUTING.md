@@ -80,7 +80,8 @@ brew install shellcheck
 bash flut.sh --help
 
 # Run tests
-bats tests/
+
+
 
 # Lint shell scripts
 shellcheck flut.sh install.sh
