@@ -149,11 +149,13 @@ COMPLETIONS_DIR="${BATS_TEST_DIRNAME}/../completions"
 # ── Zsh completion: sourcing ──────────────────────────────────────────────────
 
 @test "flut.zsh sources without errors" {
+  command -v zsh &>/dev/null || skip "zsh not available"
   run zsh -c "source '$COMPLETIONS_DIR/flut.zsh'"
   [ "$status" -eq 0 ]
 }
 
 @test "_flut function is defined after sourcing flut.zsh" {
+  command -v zsh &>/dev/null || skip "zsh not available"
   run zsh -c "source '$COMPLETIONS_DIR/flut.zsh'; functions _flut"
   [ "$status" -eq 0 ]
   [[ "$output" == *"_flut"* ]]
