@@ -19,7 +19,7 @@ set -euo pipefail
 
 # Read version from the VERSION file sitting next to this script.
 _FLUT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-FLUT_VERSION="$(cat "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+FLUT_VERSION="$(tr -d '[:space:]' < "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null || true)"
 FLUT_VERSION="${FLUT_VERSION:-dev}"
 
 RED='\033[0;31m'
@@ -894,6 +894,7 @@ class ErrorState extends StatelessWidget {
   # --------------------------------------------------------------------------
   mkd ".idea/runConfigurations"
 
+  # shellcheck disable=SC2016  # $PROJECT_DIR$ is an IntelliJ variable, not bash
   mkf ".idea/runConfigurations/Dev.xml" '<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Dev" type="FlutterRunConfigurationType" factoryName="Flutter">
     <option name="filePath" value="$PROJECT_DIR$/lib/main_dev.dart" />
@@ -903,6 +904,7 @@ class ErrorState extends StatelessWidget {
 </component>
 '
 
+  # shellcheck disable=SC2016
   mkf ".idea/runConfigurations/Dev_profile.xml" '<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Dev (profile)" type="FlutterRunConfigurationType" factoryName="Flutter">
     <option name="filePath" value="$PROJECT_DIR$/lib/main_dev.dart" />
@@ -912,6 +914,7 @@ class ErrorState extends StatelessWidget {
 </component>
 '
 
+  # shellcheck disable=SC2016
   mkf ".idea/runConfigurations/Staging.xml" '<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Staging" type="FlutterRunConfigurationType" factoryName="Flutter">
     <option name="filePath" value="$PROJECT_DIR$/lib/main_staging.dart" />
@@ -921,6 +924,7 @@ class ErrorState extends StatelessWidget {
 </component>
 '
 
+  # shellcheck disable=SC2016
   mkf ".idea/runConfigurations/Prod.xml" '<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Prod" type="FlutterRunConfigurationType" factoryName="Flutter">
     <option name="filePath" value="$PROJECT_DIR$/lib/main_prod.dart" />
@@ -1452,7 +1456,7 @@ cmd_upgrade() {
 
   # Read current version before the update
   local current_version
-  current_version="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+  current_version="$(tr -d '[:space:]' < "$INSTALL_DIR/VERSION" 2>/dev/null || true)"
   current_version="${current_version:-unknown}"
   log_info "Current version: v${current_version}"
 
@@ -1515,7 +1519,7 @@ cmd_upgrade() {
   after=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
 
   local new_version
-  new_version="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+  new_version="$(tr -d '[:space:]' < "$INSTALL_DIR/VERSION" 2>/dev/null || true)"
   new_version="${new_version:-unknown}"
 
   echo ""
@@ -1648,7 +1652,7 @@ cmd_check() {
     local err=0
     for f in "${files[@]}"; do
       local feat
-      feat="$(echo "$f" | sed 's|lib/features/\([^/]*\).*|\1|')"
+      feat="${f#lib/features/}"; feat="${feat%%/*}"
       local rel="${f#lib/}"
       if grep -qE "import.*data/" "$f" 2>/dev/null; then
         _check_err "$feat — $rel imports data/ directly"
@@ -1783,8 +1787,6 @@ cmd_check() {
     fi
 
     for key in "${tr_keys[@]}"; do
-      local escaped
-      escaped=$(echo "$key" | sed 's/\././g')
       found=$((found + 1))
       local in_en=0
       local in_fr=0
@@ -1990,14 +1992,14 @@ cmd_doctor() {
       "auto_route_generator"
     )
 
-    local missing=0
+    local missing_count=0
     local found=0
 
     for pkg in "${required[@]}"; do
       if grep -qE "^[[:space:]]*${pkg}\b[[:space:]]*:" pubspec.yaml 2>/dev/null; then
         found=$((found + 1))
       else
-        missing=$((missing + 1))
+        missing_count=$((missing_count + 1))
       fi
     done
 
@@ -2017,11 +2019,11 @@ cmd_doctor() {
     local total=$((total_runtime + total_dev))
     local total_found=$((found + dev_found))
 
-    if [[ $missing -eq 0 && $dev_missing -eq 0 ]]; then
+    if [[ $missing_count -eq 0 && $dev_missing -eq 0 ]]; then
       _doc_pass "Required packages ($total_found/$total)"
     else
       local msg=""
-      [[ $missing -gt 0 ]] && msg="$missing runtime package(s) missing"
+      [[ $missing_count -gt 0 ]] && msg="$missing_count runtime package(s) missing"
       [[ $dev_missing -gt 0 ]] && msg="$msg, $dev_missing dev package(s) missing"
       _doc_warn "Required packages — $msg"
     fi

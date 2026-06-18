@@ -48,7 +48,7 @@ fi
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 if command -v flut &>/dev/null; then
-  local_version="$(cat "$DEST/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")"
+  local_version="$(tr -d '[:space:]' < "$DEST/VERSION" 2>/dev/null || echo "unknown")"
   echo ""
   echo -e "${GREEN}${BOLD}  flut-cli v${local_version} installed successfully.${RESET}"
   echo ""
