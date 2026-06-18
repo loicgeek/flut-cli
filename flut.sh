@@ -17,6 +17,11 @@
 
 set -euo pipefail
 
+# Read version from the VERSION file sitting next to this script.
+_FLUT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+FLUT_VERSION="$(cat "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+FLUT_VERSION="${FLUT_VERSION:-dev}"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -1445,15 +1450,22 @@ cmd_upgrade() {
   log_section "Upgrading flut-cli"
   log_info "Install dir: $INSTALL_DIR"
 
+  # Read current version before the update
+  local current_version
+  current_version="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+  current_version="${current_version:-unknown}"
+  log_info "Current version: v${current_version}"
+
   if [[ ! -d "$INSTALL_DIR/.git" ]]; then
     log_error "Cannot upgrade: $INSTALL_DIR is not a git repository."
-    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/kehitaa/flut-cli/main/install.sh | bash"
+    log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash"
     exit 1
   fi
 
   # Detect the default remote branch (main or master)
   local remote_branch
-  remote_branch=$(git -C "$INSTALL_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null     | sed 's|refs/remotes/origin/||') || remote_branch="main"
+  remote_branch=$(git -C "$INSTALL_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+    | sed 's|refs/remotes/origin/||') || remote_branch="main"
 
   local before
   before=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
@@ -1476,14 +1488,22 @@ cmd_upgrade() {
   log_info "Resetting to origin/$remote_branch..."
   git -C "$INSTALL_DIR" reset --hard "origin/$remote_branch"
 
+  # Restore executable permission lost by git reset --hard when the file mode
+  # in the index is 100644 (non-executable).
+  chmod +x "$INSTALL_DIR/flut.sh"
+
   local after
   after=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
 
+  local new_version
+  new_version="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+  new_version="${new_version:-unknown}"
+
   echo ""
   if [[ "$before" == "$after" ]]; then
-    log_success "Already up to date ($after)."
+    log_success "Already up to date — v${new_version} (${after})."
   else
-    log_success "Updated $before -> $after"
+    log_success "Upgraded v${current_version} → v${new_version}  (${before} → ${after})"
     echo ""
     log_info "Changelog:"
     git -C "$INSTALL_DIR" log --oneline "${before}..${after}"
@@ -2514,7 +2534,7 @@ class ${pascal}Bloc extends Bloc<${pascal}Event, ${feature_pascal}State> {
 # ==============================================================================
 usage() {
   echo ""
-  echo -e "${BOLD}flut${RESET} - Flutter scaffold CLI"
+  echo -e "${BOLD}flut${RESET} v${FLUT_VERSION} - Flutter scaffold CLI"
   echo ""
   echo -e "  ${CYAN}flut init${RESET}                                  Init full lib/ scaffold"
   echo -e "  ${CYAN}flut feature <n>${RESET}                        Add feature (Cubit)"
@@ -2545,12 +2565,13 @@ usage() {
 }
 
 case "${1:-}" in
-  init)     cmd_init ;;
-  feature)  shift; cmd_feature "$@" ;;
-  generate) shift; cmd_generate "$@" ;;
-  check)    cmd_check ;;
-  doctor)   cmd_doctor ;;
-  upgrade)  cmd_upgrade ;;
-  -h|--help|"") usage ;;
+  init)            cmd_init ;;
+  feature)         shift; cmd_feature "$@" ;;
+  generate)        shift; cmd_generate "$@" ;;
+  check)           cmd_check ;;
+  doctor)          cmd_doctor ;;
+  upgrade)         cmd_upgrade ;;
+  -h|--help|"")    usage ;;
+  --version|-v)    echo "flut v${FLUT_VERSION}" ;;
   *) log_error "Unknown command: $1"; usage; exit 1 ;;
 esac
