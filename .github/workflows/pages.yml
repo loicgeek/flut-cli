@@ -1,0 +1,63 @@
+# =============================================================================
+#  GitHub Pages — deploy the docs/ site on every push to main
+#
+#  Live site: https://loicgeek.github.io/flut-cli/
+#
+#  Enable in repo settings:
+#    Settings → Pages → Source → GitHub Actions
+# =============================================================================
+
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "ARCHITECTURE.md"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy ARCHITECTURE.md into docs/
+        run: cp ARCHITECTURE.md docs/architecture.md
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

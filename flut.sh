@@ -1456,6 +1456,25 @@ cmd_upgrade() {
   current_version="${current_version:-unknown}"
   log_info "Current version: v${current_version}"
 
+  # ── Check GitHub releases for the latest published version ────────────────
+  if command -v curl &>/dev/null; then
+    local latest_release
+    latest_release=$(curl -sf --max-time 5 \
+      "https://api.github.com/repos/loicgeek/flut-cli/releases/latest" \
+      2>/dev/null \
+      | grep '"tag_name"' \
+      | sed 's/.*"tag_name":[[:space:]]*"v\?\([^"]*\)".*/\1/' \
+      | tr -d '[:space:]' \
+      || true)
+    if [[ -n "$latest_release" ]]; then
+      if [[ "$latest_release" == "$current_version" ]]; then
+        log_info "Latest release:  v${latest_release} (you are on the latest)"
+      else
+        log_info "Latest release:  v${latest_release} — upgrade available"
+      fi
+    fi
+  fi
+
   if [[ ! -d "$INSTALL_DIR/.git" ]]; then
     log_error "Cannot upgrade: $INSTALL_DIR is not a git repository."
     log_error "Re-install with: curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash"
@@ -2530,6 +2549,60 @@ class ${pascal}Bloc extends Bloc<${pascal}Event, ${feature_pascal}State> {
 }
 
 # ==============================================================================
+#  COMMAND: clean — Remove generated files
+# ==============================================================================
+
+cmd_clean() {
+  local do_rebuild=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --rebuild) do_rebuild=true; shift ;;
+      *) log_error "Unknown flag: $1"; usage; exit 1 ;;
+    esac
+  done
+
+  log_section "Clean Generated Files"
+  echo ""
+
+  if [[ ! -d "lib" ]]; then
+    log_error "lib/ directory not found — run flut clean from the project root."
+    exit 1
+  fi
+
+  local files=()
+  while IFS= read -r -d '' f; do
+    files+=("$f")
+  done < <(find lib/ \( -name '*.gr.dart' -o -name '*.g.dart' \) -print0 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    log_info "No generated files found."
+    echo ""
+    log_info "Run 'dart run build_runner build --delete-conflicting-outputs' to generate them."
+    echo ""
+    return
+  fi
+
+  for f in "${files[@]}"; do
+    rm "$f"
+    log_info "Removed ${f#lib/}"
+  done
+
+  echo ""
+  log_success "${#files[@]} generated file(s) removed."
+  echo ""
+
+  if [[ "$do_rebuild" == true ]]; then
+    log_info "Running build_runner..."
+    echo ""
+    dart run build_runner build --delete-conflicting-outputs
+  else
+    log_info "Run 'dart run build_runner build --delete-conflicting-outputs' to regenerate."
+  fi
+  echo ""
+}
+
+# ==============================================================================
 #  ENTRYPOINT
 # ==============================================================================
 usage() {
@@ -2544,6 +2617,8 @@ usage() {
   echo -e "  ${CYAN}flut generate${RESET}                              Generate individual components"
   echo -e "  ${CYAN}flut check${RESET}                                  Audit architecture conventions"
   echo -e "  ${CYAN}flut doctor${RESET}                                 Check project health"
+  echo -e "  ${CYAN}flut clean${RESET}                                  Remove generated files (.gr.dart, .g.dart)"
+  echo -e "  ${CYAN}flut clean --rebuild${RESET}                    Remove then regenerate via build_runner"
   echo -e "  ${CYAN}flut upgrade${RESET}                               Upgrade flut-cli to latest version"
   echo ""
   echo "  Examples:"
@@ -2570,6 +2645,7 @@ case "${1:-}" in
   generate)        shift; cmd_generate "$@" ;;
   check)           cmd_check ;;
   doctor)          cmd_doctor ;;
+  clean)           shift; cmd_clean "$@" ;;
   upgrade)         cmd_upgrade ;;
   -h|--help|"")    usage ;;
   --version|-v)    echo "flut v${FLUT_VERSION}" ;;

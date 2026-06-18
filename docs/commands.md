@@ -11,6 +11,7 @@
 - [`flut generate`](#flut-generate-type-feature-name)
 - [`flut check`](#flut-check)
 - [`flut doctor`](#flut-doctor)
+- [`flut clean`](#flut-clean---rebuild)
 - [`flut upgrade`](#flut-upgrade)
 - [`flut --version`](#flut---version)
 - [Exit codes](#exit-codes)
@@ -314,6 +315,53 @@ flut doctor
 
 ---
 
+## `flut clean [--rebuild]`
+
+Removes all generated files (`*.gr.dart`, `*.g.dart`) from `lib/`. Use this when generated files are stale or you want a clean rebuild.
+
+### Synopsis
+
+```
+flut clean
+flut clean --rebuild
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--rebuild` | After removing files, run `dart run build_runner build --delete-conflicting-outputs` to regenerate immediately. |
+
+### What it removes
+
+All files matching `*.gr.dart` or `*.g.dart` anywhere under `lib/`.
+
+| Pattern | Typical source |
+|---------|---------------|
+| `*.gr.dart` | AutoRoute code generation |
+| `*.g.dart` | Any `build_runner`-based generator |
+
+Regular `.dart` files are never touched.
+
+### Examples
+
+```bash
+# Remove generated files and see the count
+flut clean
+
+# Remove and immediately regenerate
+flut clean --rebuild
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success (even if no files were found) |
+| `1` | `lib/` not found, or unknown flag |
+
+---
+
 ## `flut upgrade`
 
 Updates the CLI to the latest version from the remote git repository.
@@ -327,12 +375,13 @@ flut upgrade
 ### What it does
 
 1. Reads the current version from the `VERSION` file.
-2. Detects the remote branch (`main` or `master`).
-3. Warns if there are local uncommitted changes (they will be discarded).
-4. Runs `git fetch origin <branch>`.
-5. Runs `git reset --hard origin/<branch>`.
-6. Restores the executable permission on `flut.sh` (`chmod +x`).
-7. Prints the version change (`v0.1.0 → v0.2.0`) and the git changelog.
+2. Queries the GitHub Releases API to show the latest published version (requires `curl`; skipped gracefully if unavailable).
+3. Detects the remote branch (`main` or `master`).
+4. Warns if there are local uncommitted changes (they will be discarded).
+5. Runs `git fetch origin <branch>`.
+6. Runs `git reset --hard origin/<branch>`.
+7. Restores the executable permission on `flut.sh` (`chmod +x`).
+8. Prints the version change (`v0.1.0 → v0.2.0`) and the git changelog.
 
 ### Examples
 

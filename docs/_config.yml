@@ -1,0 +1,14 @@
+title: flut-cli
+description: Flutter project scaffold CLI by NTECH-SERVICES
+theme: jekyll-theme-cayman
+show_downloads: false
+
+url: "https://loicgeek.github.io"
+baseurl: "/flut-cli"
+
+# Render every Markdown page with the default layout
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

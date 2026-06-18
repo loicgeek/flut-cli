@@ -175,12 +175,46 @@ The workflow runs the full test suite, verifies the tag matches `VERSION`, then 
 
 ---
 
-## 📋 Phase 4 — Advanced Features *(Planned)*
+## ✅ Phase 4 — Advanced Features *(Completed)*
 
-- **Version check in `flut upgrade`** — query GitHub API for the latest tag and warn if already up to date before pulling
-- **`flut clean`** — remove generated files (`.gr.dart`, `.g.dart`) and optionally run `build_runner clean`
-- **ARCHITECTURE.md** — deep-dive into NTECH-SERVICES clean architecture conventions
-- **Documentation site** — GitHub Pages with full command reference
+### ✅ 4.1 `flut upgrade` — GitHub API version check
+
+Before pulling, `flut upgrade` now queries `api.github.com/repos/loicgeek/flut-cli/releases/latest` (requires `curl`, skipped gracefully if unavailable) and reports whether the user is already on the latest published release or whether a newer one exists.
+
+```
+Current version:  v0.1.0
+Latest release:   v0.2.0 — upgrade available
+Fetching from origin...
+```
+
+---
+
+### ✅ 4.2 `flut clean [--rebuild]`
+
+Removes all `*.gr.dart` and `*.g.dart` files from `lib/`. Accepts `--rebuild` to immediately re-run `dart run build_runner build --delete-conflicting-outputs`.
+
+```bash
+flut clean            # remove generated files
+flut clean --rebuild  # remove then regenerate
+```
+
+10 BATS tests added in `tests/clean.bats`.
+
+---
+
+### ✅ 4.3 GitHub Pages documentation site
+
+Live at **[loicgeek.github.io/flut-cli](https://loicgeek.github.io/flut-cli/)** (once GitHub Pages is enabled in repo settings).
+
+| File | Purpose |
+|---|---|
+| `docs/index.md` | Landing page — install, quick start, links to all docs |
+| `docs/_config.yml` | Jekyll Cayman theme config |
+| `docs/commands.md` | Full command reference (updated with `flut clean`) |
+| `docs/faq.md` | FAQ |
+| `.github/workflows/pages.yml` | Builds & deploys on every push to `main` that touches `docs/` or `ARCHITECTURE.md` |
+
+**Enable:** repo Settings → Pages → Source → **GitHub Actions**.
 
 ---
 
@@ -203,16 +237,17 @@ The workflow runs the full test suite, verifies the tag matches `VERSION`, then 
    ├── flut upgrade improvements (chmod fix, version display, changelog)
    └── Documentation (README badges, ARCHITECTURE.md, docs/commands.md, docs/faq.md)
 
-📋 Phase 4 (Advanced)            ← NEXT
+✅ Phase 4 (Advanced)             ← COMPLETED
    ├── flut upgrade — GitHub API version check
-   └── flut clean command
+   ├── flut clean (+ --rebuild flag, 10 tests)
+   └── GitHub Pages docs site
 ```
 
 ---
 
 ## How to Contribute
 
-1. Pick an item from **Phase 4** above
+1. Open an issue for a new feature or bug fix
 2. Create a branch: `git checkout -b feat/your-change`
 3. Implement the feature
 4. Add/update tests in `tests/`
