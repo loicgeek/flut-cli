@@ -23,7 +23,7 @@
 | `tests/init.bats` | `flut init` — directory structure, all files, IDE settings, idempotency | 27 |
 | `tests/upgrade.bats` | `flut upgrade` — help mention, git detection, fetch failure | 3 |
 | `tests/helpers.bash` | Shared utilities — sandbox, assertions (`assert_file_exists`, `assert_file_contains`, etc.) | — |
-| **Total** | | **64 tests — all passing** |
+| **Total** | | **97 tests — all passing** |
 
 **Run with:**
 ```bash
@@ -69,101 +69,39 @@ A comprehensive contributing guide covering:
 
 ---
 
-## 🔜 Phase 2 — New Commands *(Next up)*
+## ✅ Phase 2 — New Commands *(In progress)*
 
-### 2.1 `flut check` — Architecture Audit
+### ✅ 2.1 `flut check` — Architecture Audit *(Completed)*
 
-Validates that a Flutter project still follows the NTECH-SERVICES clean architecture conventions after manual edits. **The unique differentiator of this CLI.**
+Validates that a Flutter project still follows the NTECH-SERVICES clean architecture conventions after manual edits.
 
-**Checks to implement:**
+**9 checks implemented:** feature structure, sealed states, banned codegen, layer boundaries, router registration, DI registration, translation keys, orphaned generated files, cubit convention.
 
-| # | Check | Implementation |
-|---|---|---|
-| 1 | **Feature structure** | Every dir under `lib/features/<x>/` must have `business_logic/`, `data/`, `presentation/` with required sub-dirs |
-| 2 | **State is sealed** | Every `*_state.dart` must declare a `sealed class` |
-| 3 | **No banned codegen** | Warn if `freezed` or `json_serializable` in `pubspec.yaml` |
-| 4 | **Layer boundaries** | Files in `presentation/` should not import `data/` directly (only `business_logic/`) |
-| 5 | **Router registration** | Screens in `features/*/presentation/screens/` referenced in `app_router.dart` |
-| 6 | **DI registration** | Repos/Services registered in `service_locator.dart` have corresponding files |
-| 7 | **Translation keys** | Keys used in `tr()` calls exist in both `en.json` and `fr.json` |
-| 8 | **No orphaned generated files** | `.gr.dart` files whose source has been deleted |
-| 9 | **Cubit/Bloc convention** | Cubit files use `try/catch` with `AppFailure`, not generic `Exception` |
-
-**Output format:**
-```
-$ flut check
-  ok  Feature structure (9 features)
-  ok  Sealed states (9/9 valid)
-  xx  auth — imports data/ directly from presentation/login_screen.dart
-  ok  No banned packages
-  !!  Translation key "order.empty" missing from en.json
-  ok  Router registration (12/12 screens)
-  ok  DI registration (18/18 registrations)
-
-  1 warning, 1 error — see details above
-```
-
-**Exit codes:**
-- `0` — all clear
-- `1` — warnings only
-- `2` — errors found
+**Exit codes:** `0` = all clear, `1` = warnings, `2` = errors
 
 ---
 
-### 2.2 `flut doctor` — Project Health
+### ✅ 2.2 `flut doctor` — Project Health *(Completed)*
 
 Analyzes the current Flutter project and reports its health status.
 
-**Checks:**
-
-| Check | What it validates |
-|---|---|
-| Flutter SDK | `flutter --version` available, meets min version |
-| Project root | `pubspec.yaml` exists and is valid |
-| Required packages | All expected dependencies are in `pubspec.yaml` |
-| Generated code | `build_runner` has been run (`.gr.dart` files exist) |
-| Scaffold integrity | Expected `lib/` structure from `flut init` is intact |
-| Outdated packages | `flutter pub outdated` summary |
-| Git | Whether project is initialized with git |
-
-**Example:**
-```
-$ flut doctor
-  ✓ Flutter SDK 3.24.0
-  ✓ Project root detected
-  ✓ Required packages (14/14)
-  !! Build runner not run — dart run build_runner build --delete-conflicting-outputs
-  ✓ Scaffold structure intact
-  ✓ Git initialized
-  - 3 packages have updates available (flutter pub outdated)
-```
+**7 checks implemented:** Flutter SDK, project root, required packages, generated code, scaffold integrity, outdated packages, git.
 
 ---
 
-### 2.3 `flut generate` Sub-commands
+### ✅ 2.3 `flut generate` Sub-commands *(Completed)*
 
 Reusable generators for individual components (not full feature slices).
 
-| Sub-command | What it creates |
-|---|---|
-| `flut generate model <name>` | Plain Dart model with `fromJson`/`toJson`/`copyWith`/`==`/`hashCode` |
-| `flut generate screen <name>` | Screen with `BlocProvider`/`BlocConsumer`, route-ready |
-| `flut generate repository <name>` | Repository with Dio injection + error handling |
-| `flut generate cubit <name>` | Cubit + state + sealed class |
-| `flut generate bloc <name>` | Bloc + events + state + sealed class |
+| Sub-command | Arguments | What it creates |
+|---|---|---|
+| `flut generate model <feature> <name>` | feature, name | Plain Dart model with `fromJson`/`toJson`/`copyWith`/`==`/`hashCode` |
+| `flut generate screen <feature> <name>` | feature, name | Screen with `BlocProvider`/`BlocConsumer`, route-ready |
+| `flut generate repository <feature> <name>` | feature, name | Repository with Dio injection + error handling |
+| `flut generate cubit <feature> <name>` | feature, name | Cubit + state + sealed class |
+| `flut generate bloc <feature> <name>` | feature, name | Bloc + events + state + sealed class |
 
-Each sub-command places the file in the correct location and prints the registration instructions.
-
----
-
-### 2.4 `flut clean` — Un-Scaffold
-
-Removes everything `flut init` created.
-
-- Deletes generated `lib/` directories
-- Removes added packages from `pubspec.yaml`
-- Deletes `.vscode/launch.json` and `.idea/runConfigurations/`
-- Interactive confirmation before any destructive action
+Each sub-command places the file in the correct feature directory and prints the registration instructions.
 
 ---
 
@@ -233,16 +171,15 @@ source completions/flut.zsh
 
 ```
 ✅ Phase 1 (Foundation)           ← COMPLETED
-   ├── BATS test suite (64 tests)
+   ├── BATS test suite (97 tests)
    ├── GitHub CI (lint + test + integration)
    └── CONTRIBUTING.md
 
-🔜 Phase 2 (Unique Value)        ← NEXT
-   ├── flut check  — architecture audit
-   ├── flut doctor — project health
-   ├── flut generate sub-commands
-   ├── flut clean
-   └── GitHub Release workflow
+✅ Phase 2 (Unique Value)        ← COMPLETED
+   ├── ✅ flut check  — architecture audit
+   ├── ✅ flut doctor — project health
+   ├── ✅ flut generate sub-commands
+   └── 📋 GitHub Release workflow
 
 📋 Phase 3 (DX)
    ├── Shell completions
