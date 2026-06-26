@@ -50,7 +50,11 @@ flut check
 # 5. Check project health
 flut doctor
 
-# 6. Keep the CLI up to date
+# 6. Find and remove unused assets
+flut assets check
+flut assets clean --all
+
+# 7. Keep the CLI up to date
 flut upgrade
 ```
 

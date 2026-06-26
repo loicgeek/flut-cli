@@ -72,7 +72,7 @@ source ~/.flut-cli/completions/flut.bash
 source ~/.flut-cli/completions/flut.zsh
 ```
 
-Completions cover all commands, `--bloc`/`--service` flags, `generate` types, and feature names from `lib/features/`.
+Completions cover all commands, `--bloc`/`--service` flags, `generate` types, `assets` sub-commands (`check`, `stats`, `clean`), `--all`/`--dry-run` flags, and feature names from `lib/features/`.
 
 ---
 
@@ -100,6 +100,9 @@ flut generate cubit <feat> [name]       Generate a Cubit + state
 flut generate bloc <feat> [name]        Generate a Bloc + events + state
 flut check                              Audit architecture conventions
 flut doctor                             Check project health
+flut assets check                       Detect unused Flutter assets
+flut assets stats                       Statistics by category (images, icons, lottie)
+flut assets clean [--all] [--dry-run]   Delete unused assets
 flut upgrade                            Update flut-cli to latest version
 flut --version                          Print the installed version
 flut --help                             Show this help
@@ -211,6 +214,39 @@ Generates individual components into an existing feature (not full feature slice
 | `bloc` | `flut generate bloc auth login` | `login_bloc.dart` + `login_event.dart` + shared state |
 
 If the name is omitted, it defaults to the feature name (e.g., `flut generate model auth` creates `auth_model.dart`).
+
+---
+
+### `flut assets <check|stats|clean>`
+
+Detects and removes unused assets (images, icons, lottie files — translations excluded).
+
+| Sub-command | What it does |
+|---|---|
+| `flut assets check` | Lists every asset not referenced in `lib/**/*.dart`, with its size. Exit `1` if any found (CI-friendly). |
+| `flut assets stats` | Prints a statistics table by category (images / icons / lottie / other) — count, total size, unused count, unused size. |
+| `flut assets clean` | Interactive deletion: prompts `[y/N/q]` for each unused asset, then prints a summary (files deleted, bytes freed). |
+| `flut assets clean --all` | Shows all unused assets, asks for a single global confirmation, then deletes them all. |
+| `flut assets clean --dry-run` | Simulates deletion without touching any file. |
+
+**Detection method:** searches `lib/` for any `.dart` file containing the asset's filename or full relative path. Dynamic string interpolation (e.g. `'assets/images/$name'`) is not detectable — that's an accepted limitation.
+
+```bash
+# Spot unused assets
+flut assets check
+
+# Summary table
+flut assets stats
+
+# Delete one by one
+flut assets clean
+
+# Delete all at once
+flut assets clean --all
+
+# Preview without deleting
+flut assets clean --dry-run
+```
 
 ---
 

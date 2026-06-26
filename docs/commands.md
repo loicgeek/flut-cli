@@ -12,6 +12,7 @@
 - [`flut check`](#flut-check)
 - [`flut doctor`](#flut-doctor)
 - [`flut clean`](#flut-clean---rebuild)
+- [`flut assets`](#flut-assets-subcommand)
 - [`flut upgrade`](#flut-upgrade)
 - [`flut --version`](#flut---version)
 - [Exit codes](#exit-codes)
@@ -362,6 +363,119 @@ flut clean --rebuild
 
 ---
 
+## `flut assets <subcommand>`
+
+Detects and removes unused Flutter assets. Scans `assets/` (excluding `assets/translations/`, which has its own validation via `flut check`) and cross-references every file against `lib/**/*.dart`.
+
+### Synopsis
+
+```
+flut assets check
+flut assets stats
+flut assets clean [--all] [--dry-run]
+```
+
+### Sub-commands
+
+#### `flut assets check`
+
+Lists all assets not referenced in any `.dart` file under `lib/`, with their individual sizes and a wasted-space summary.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All assets are referenced — nothing wasted |
+| `1` | One or more unused assets found |
+
+**Example output:**
+
+```
+>> Asset Usage Check
+
+  Unused assets:
+
+    assets/images/onboarding_banner.png  (84.2 KB)
+    assets/icons/close_old.svg           (3.1 KB)
+
+  2 unused asset(s) — 87.3 KB wasted
+  Scanned: 12 asset(s) total
+```
+
+**Use in CI:**
+
+```bash
+flut assets check || echo "Unused assets detected — clean up before merging"
+```
+
+---
+
+#### `flut assets stats`
+
+Prints a statistics table broken down by category.
+
+**Columns:** Category, Count, Size, Unused, Unused size
+
+**Example output:**
+
+```
+>> Asset Statistics
+
+  Category   Count        Size    Unused    Unused size
+  ─────────────────────────────────────────────────────
+  images         8      1.2 MB         2       87.3 KB
+  icons          4     12.4 KB         0          0 B
+  lottie         2    340.0 KB         1      280.0 KB
+  ─────────────────────────────────────────────────────
+  Total         14      1.5 MB         3      367.3 KB
+```
+
+---
+
+#### `flut assets clean [--all] [--dry-run]`
+
+Deletes unused assets, interactively or in bulk.
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| *(none)* | One-by-one: prompts `[y/N/q]` for each unused asset. `q` quits immediately. |
+| `--all` | Lists all unused assets, asks a single `[y/N]` confirmation, then deletes them all. |
+| `--dry-run` | Shows what would be deleted without touching any file. Compatible with both modes. |
+
+**End-of-operation summary (example):**
+
+```
+  ok   3 file(s) deleted — 367.3 KB freed.
+```
+
+**Examples:**
+
+```bash
+# Review and delete one by one
+flut assets clean
+
+# Preview — no files deleted
+flut assets clean --dry-run
+
+# Bulk delete with single confirmation
+flut assets clean --all
+
+# Preview bulk delete
+flut assets clean --all --dry-run
+```
+
+### Detection method
+
+For each asset file, `flut assets` searches `lib/` for any `.dart` file that mentions either:
+- the **bare filename** (`close.svg`)
+- the **full relative path** (`assets/icons/close.svg`)
+
+**Known limitation:** assets referenced via dynamic string interpolation (e.g. `'assets/images/$iconName'`) cannot be detected and will be reported as unused. Mark those directories as exceptions or review warnings manually before deleting.
+
+---
+
 ## `flut upgrade`
 
 Updates the CLI to the latest version from the remote git repository.
@@ -428,5 +542,5 @@ flut --version
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | General error (bad arguments, missing pubspec.yaml, warnings in `flut check`) |
+| `1` | General error (bad arguments, missing pubspec.yaml, warnings in `flut check`, unused assets in `flut assets check`) |
 | `2` | Errors found by `flut check` |

@@ -121,9 +121,10 @@ Tab-completion for `flut` commands and flags in bash and zsh.
 - `completions/flut.zsh` — zsh completion (with descriptions via `_describe`)
 
 **Completion targets:**
-- Top-level: `init`, `feature`, `upgrade`, `check`, `doctor`, `generate`
+- Top-level: `init`, `feature`, `upgrade`, `check`, `doctor`, `generate`, `assets`
 - `feature` flags: `--bloc`, `--service`
 - `generate` types: `model`, `screen`, `repository`, `cubit`, `bloc`
+- `assets` sub-commands: `check`, `stats`, `clean`; `clean` flags: `--all`, `--dry-run`
 - Dynamic: `--feature` argument suggests existing feature names from `lib/features/`
 
 **Install (printed by `install.sh` after install):**
@@ -218,6 +219,34 @@ Live at **[loicgeek.github.io/flut-cli](https://loicgeek.github.io/flut-cli/)** 
 
 ---
 
+## ✅ Phase 5 — Asset Analysis & Cleanup *(Completed)*
+
+### ✅ 5.1 `flut assets` — Unused asset detection and removal
+
+Detects Flutter assets that are never referenced in Dart code and lets the developer remove them interactively or in bulk.
+
+**New file:** `commands/cmd_assets.sh` (sourced by `flut.sh` — keeps the main file manageable)
+
+**Sub-commands:**
+
+| Sub-command | Exit code | Description |
+|---|---|---|
+| `flut assets check` | `0` = clean, `1` = unused found | Lists unused assets with sizes and wasted-space summary |
+| `flut assets stats` | `0` | Statistics table by category (images / icons / lottie / other) |
+| `flut assets clean` | `0` | Interactive one-by-one deletion (`[y/N/q]`) |
+| `flut assets clean --all` | `0` | Bulk deletion with a single confirmation |
+| `flut assets clean --dry-run` | `0` | Preview without touching any file |
+
+**Detection:** `grep -rqE "(basename|full/path)" --include='*.dart' lib/` — same pattern family as the existing translation-key scanner.
+
+**Translations excluded** — `assets/translations/` is handled separately by `flut check`.
+
+**20 BATS tests** added in `tests/assets.bats`.
+
+**Completions updated** — bash and zsh completions now suggest `check`, `stats`, `clean`, `--all`, `--dry-run`.
+
+---
+
 ## Implementation Order
 
 ```
@@ -241,6 +270,9 @@ Live at **[loicgeek.github.io/flut-cli](https://loicgeek.github.io/flut-cli/)** 
    ├── flut upgrade — GitHub API version check
    ├── flut clean (+ --rebuild flag, 10 tests)
    └── GitHub Pages docs site
+
+✅ Phase 5 (Asset Management)     ← COMPLETED
+   └── flut assets (check / stats / clean) — 20 tests
 ```
 
 ---

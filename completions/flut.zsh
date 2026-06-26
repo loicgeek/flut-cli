@@ -42,6 +42,22 @@ _flut() {
               ;;
           esac
           ;;
+        assets)
+          _arguments -C \
+            '1: :_flut_asset_subcmds' \
+            '*:: :->asset_args'
+          case $state in
+            asset_args)
+              case ${words[1]} in
+                clean)
+                  _arguments \
+                    '--all[Delete all unused without per-file prompts]' \
+                    '--dry-run[Show what would be deleted without deleting]'
+                  ;;
+              esac
+              ;;
+          esac
+          ;;
       esac
       ;;
   esac
@@ -55,6 +71,7 @@ _flut_commands() {
     'check:Audit project architecture'
     'doctor:Check project health'
     'generate:Generate a code artifact within a feature'
+    'assets:Analyze and clean up unused Flutter assets'
   )
   _describe 'command' commands
 }
@@ -76,6 +93,15 @@ _flut_features() {
   if [[ ${#features[@]} -gt 0 ]]; then
     _values 'feature' "${features[@]}"
   fi
+}
+
+_flut_asset_subcmds() {
+  local subcmds=(
+    'check:List unused assets with sizes'
+    'stats:Full statistics by category'
+    'clean:Delete unused assets interactively'
+  )
+  _describe 'subcommand' subcmds
 }
 
 compdef _flut flut

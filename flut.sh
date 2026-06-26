@@ -43,6 +43,12 @@ log_warning() { echo -e "${YELLOW}  !!  ${RESET} $1"; }
 log_error()   { echo -e "${RED}  xx  ${RESET} $1"; }
 log_section() { echo -e "\n${BOLD}${CYAN}>> $1${RESET}"; }
 
+# Load command modules
+if [[ -f "$_FLUT_SCRIPT_DIR/commands/cmd_assets.sh" ]]; then
+  # shellcheck source=commands/cmd_assets.sh
+  source "$_FLUT_SCRIPT_DIR/commands/cmd_assets.sh"
+fi
+
 mkf() {
   local path="$1" content="$2"
   mkdir -p "$(dirname "$path")"
@@ -2615,6 +2621,9 @@ usage() {
   echo -e "  ${CYAN}flut clean${RESET}                                  Remove generated files (.gr.dart, .g.dart)"
   echo -e "  ${CYAN}flut clean --rebuild${RESET}                    Remove then regenerate via build_runner"
   echo -e "  ${CYAN}flut upgrade${RESET}                               Upgrade flut-cli to latest version"
+  echo -e "  ${CYAN}flut assets check${RESET}                          Detect unused assets"
+  echo -e "  ${CYAN}flut assets stats${RESET}                          Statistics by category"
+  echo -e "  ${CYAN}flut assets clean [--all] [--dry-run]${RESET}  Delete unused assets"
   echo ""
   echo "  Examples:"
   echo "    flut init"
@@ -2631,6 +2640,10 @@ usage() {
   echo "    flut check"
   echo "    flut doctor"
   echo "    flut upgrade"
+  echo "    flut assets check"
+  echo "    flut assets stats"
+  echo "    flut assets clean"
+  echo "    flut assets clean --all"
   echo ""
 }
 
@@ -2641,6 +2654,12 @@ case "${1:-}" in
   check)           cmd_check ;;
   doctor)          cmd_doctor ;;
   clean)           shift; cmd_clean "$@" ;;
+  assets)
+    if declare -f cmd_assets &>/dev/null; then
+      shift; cmd_assets "$@"
+    else
+      log_error "assets module not found. Try: flut upgrade"; exit 1
+    fi ;;
   upgrade)         cmd_upgrade ;;
   -h|--help|"")    usage ;;
   --version|-v)    echo "flut v${FLUT_VERSION}" ;;

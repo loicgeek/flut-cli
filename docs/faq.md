@@ -49,6 +49,36 @@ Yes. All commands that touch project files (`init`, `feature`, `generate`, `chec
 
 Yes. `flut init` is idempotent — it only creates files that don't already exist. It won't overwrite anything you've edited.
 
+### Must I run `flut assets` from the project root?
+
+Yes — same rule as all other commands. `flut assets` expects to find an `assets/` directory and a `lib/` directory in the current working directory.
+
+### What counts as an asset being "used"?
+
+`flut assets` searches every `.dart` file under `lib/` for either the asset's **bare filename** (e.g. `logo.png`) or its **full relative path** (e.g. `assets/images/logo.png`). If either appears in any `.dart` file the asset is considered used.
+
+### An asset is flagged as unused but it IS used in my code
+
+The most common causes:
+
+1. **Dynamic interpolation** — `Image.asset('assets/images/$name')` cannot be statically detected. The check will flag `$name`-resolved files as unused. Review these manually.
+2. **Constants** — if you reference the path through a constant (`AppAssets.logo = 'assets/images/logo.png'`), the *constant file* references the path, but if grep finds that constant file, the asset will be marked used correctly. If the constant itself is generated (e.g. in a `.g.dart` file excluded from `lib/`), it won't be found.
+3. **Referenced only in tests** — `test/` is not scanned. Assets only used in test fixtures will be flagged.
+
+In these cases, skip that specific file when `flut assets clean` prompts you.
+
+### Are translation files scanned?
+
+No. `assets/translations/` is excluded from all `flut assets` sub-commands. Translation key validation is handled by `flut check` instead.
+
+### Can I use `flut assets check` in CI to block PRs?
+
+Yes — `flut assets check` exits `1` when unused assets are found and `0` when everything is clean, making it drop-in compatible with standard CI pipelines:
+
+```bash
+flut assets check || exit 1
+```
+
 ### What's the difference between `flut feature` and `flut generate`?
 
 | | `flut feature` | `flut generate` |
@@ -160,4 +190,12 @@ See `CONTRIBUTING.md` for the full workflow.
 2. Add the type to the `case` switch inside `cmd_generate()`.
 3. Add a test in `tests/generate.bats`.
 4. Update the `--help` output in the `usage()` function.
+5. Update `docs/commands.md`.
+
+### How do I add a new `flut assets` sub-command?
+
+1. Add a `_assets_cmd_<name>()` function in `commands/cmd_assets.sh`.
+2. Add the sub-command to the `case` switch inside `cmd_assets()`.
+3. Add tests in `tests/assets.bats`.
+4. Update the `_assets_usage()` function in `commands/cmd_assets.sh`.
 5. Update `docs/commands.md`.

@@ -24,7 +24,7 @@ _flut_complete() {
   COMPREPLY=()
 
   if [[ ${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "init feature upgrade check doctor generate --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "init feature upgrade check doctor generate assets clean --help -h" -- "$cur"))
     return
   fi
 
@@ -41,6 +41,13 @@ _flut_complete() {
         COMPREPLY=($(compgen -W "$features" -- "$cur"))
       else
         COMPREPLY=($(compgen -W "--feature" -- "$cur"))
+      fi
+      ;;
+    assets)
+      if [[ ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "check stats clean" -- "$cur"))
+      elif [[ "${COMP_WORDS[2]}" == "clean" ]]; then
+        COMPREPLY=($(compgen -W "--all --dry-run" -- "$cur"))
       fi
       ;;
   esac
