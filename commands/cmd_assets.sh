@@ -37,6 +37,24 @@ _assets_list_files() {
   | sort
 }
 
+# Count asset files (used to build the [N/M] progress counter).
+_assets_count_files() {
+  _assets_list_files | wc -l | tr -d ' '
+}
+
+# Write a \r-overwriting progress line to stderr (terminal only).
+# Args: $1 = current index, $2 = total, $3 = asset path being scanned
+_assets_progress() {
+  [[ -t 2 ]] || return 0
+  printf "\r  ${CYAN}->  ${RESET} [%d/%d] Checking %-55s" "$1" "$2" "$3" >&2
+}
+
+# Clear the progress line (call after the scan loop ends).
+_assets_clear_progress() {
+  [[ -t 2 ]] || return 0
+  printf "\r%80s\r" "" >&2
+}
+
 # Classify an asset path into a category: images | icons | lottie | other
 _assets_category() {
   case "$1" in
@@ -63,9 +81,14 @@ _assets_cmd_check() {
   local unused_sizes=()
   local total_count=0
   local total_bytes=0
+  local _total_files _scan_idx
+  _total_files="$(_assets_count_files)"
+  _scan_idx=0
 
   while IFS= read -r asset; do
     [[ -z "$asset" ]] && continue
+    _scan_idx=$((_scan_idx + 1))
+    _assets_progress "$_scan_idx" "$_total_files" "$asset"
     total_count=$((total_count + 1))
     local size
     size="$(_assets_file_size "$asset")"
@@ -76,6 +99,7 @@ _assets_cmd_check() {
       unused_sizes+=("$size")
     fi
   done < <(_assets_list_files)
+  _assets_clear_progress
 
   if [[ $total_count -eq 0 ]]; then
     log_info "No assets found (excluding translations)."
@@ -127,9 +151,14 @@ _assets_cmd_stats() {
   local count_lottie=0 bytes_lottie=0 uc_lottie=0 ub_lottie=0
   local count_other=0  bytes_other=0  uc_other=0  ub_other=0
   local grand_total=0  grand_bytes=0  grand_uc=0   grand_ub=0
+  local _total_files _scan_idx
+  _total_files="$(_assets_count_files)"
+  _scan_idx=0
 
   while IFS= read -r asset; do
     [[ -z "$asset" ]] && continue
+    _scan_idx=$((_scan_idx + 1))
+    _assets_progress "$_scan_idx" "$_total_files" "$asset"
     local size cat used
     size="$(_assets_file_size "$asset")"
     cat="$(_assets_category "$asset")"
@@ -161,6 +190,7 @@ _assets_cmd_stats() {
         ;;
     esac
   done < <(_assets_list_files)
+  _assets_clear_progress
 
   if [[ $grand_total -eq 0 ]]; then
     log_info "No assets found (excluding translations)."
@@ -233,14 +263,20 @@ _assets_cmd_clean() {
 
   local unused_paths=()
   local unused_sizes=()
+  local _total_files _scan_idx
+  _total_files="$(_assets_count_files)"
+  _scan_idx=0
 
   while IFS= read -r asset; do
     [[ -z "$asset" ]] && continue
+    _scan_idx=$((_scan_idx + 1))
+    _assets_progress "$_scan_idx" "$_total_files" "$asset"
     if ! _assets_is_used "$asset"; then
       unused_paths+=("$asset")
       unused_sizes+=("$(_assets_file_size "$asset")")
     fi
   done < <(_assets_list_files)
+  _assets_clear_progress
 
   if [[ ${#unused_paths[@]} -eq 0 ]]; then
     log_success "No unused assets found."
