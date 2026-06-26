@@ -4,7 +4,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 
 // Matches complete asset paths with all Flutter-supported extensions.
 final _assetRegex = RegExp(
-  r'assets/[a-zA-Z0-9_\-/.]+\.(png|jpg|jpeg|svg|webp|gif|json|ttf|otf|mp4|mp3|riv|lottie)',
+  r'assets/[a-zA-Z0-9_\-/.]+\.(png|jpg|jpeg|svg|webp|gif|json|ttf|otf|mp4|mp3|riv|lottie|pdf)',
 );
 
 void main() {
