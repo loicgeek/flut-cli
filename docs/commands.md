@@ -468,11 +468,65 @@ flut assets clean --all --dry-run
 
 ### Detection method
 
-For each asset file, `flut assets` searches `lib/` for any `.dart` file that mentions either:
-- the **bare filename** (`close.svg`)
-- the **full relative path** (`assets/icons/close.svg`)
+The engine runs a Dart AST analysis in two passes across all files under `lib/`.
 
-**Known limitation:** assets referenced via dynamic string interpolation (e.g. `'assets/images/$iconName'`) cannot be detected and will be reported as unused. Mark those directories as exceptions or review warnings manually before deleting.
+**Pass 1 — build a global identifier map**
+
+Extracts every declaration that holds an asset path literal:
+
+| Declaration type | Example | Registered as |
+|---|---|---|
+| Top-level variable | `const kLogo = 'assets/images/logo.png';` | `kLogo` |
+| Class static field | `class AppAssets { static const logo = 'assets/...'; }` | `logo` and `AppAssets.logo` |
+| Mixin / Extension field | Same pattern | plain name and `Type.field` |
+
+**Pass 2 — resolve usages**
+
+For every `.dart` file:
+1. **Direct literals** — regex scan for complete `assets/…` paths.
+2. **Named references** — word-boundary match (`\bAppAssets.logo\b`) against the global map built in pass 1. Qualified names (`ClassName.field`) are preferred to reduce false positives.
+
+**Supported extensions:** `.png` `.jpg` `.jpeg` `.svg` `.webp` `.gif` `.json` `.ttf` `.otf` `.mp4` `.mp3` `.riv` `.lottie`
+
+---
+
+### Known limitations
+
+The following patterns are **not detectable** by static analysis and will cause an asset to be reported as unused even if it is actually used at runtime. Review these manually before confirming a deletion.
+
+**1. Dynamic string interpolation**
+
+```dart
+// ❌ — no complete path in source
+Image.asset('assets/icons/$iconName.svg');
+SvgPicture.asset('assets/images/${theme}_background.svg');
+```
+
+**2. Runtime path construction**
+
+```dart
+// ❌ — path assembled at runtime
+final path = 'assets/' + category + '/' + fileName;
+```
+
+**3. `flutter_gen` / code-generated accessors**
+
+```dart
+// ❌ — no string literal anywhere; generated via flutter_gen
+Assets.images.logo.path
+Gen.icons.close
+```
+
+**Recommended workaround for dynamic paths:** declare the full path in a `static const` field and reference the field. The engine will track it across files.
+
+```dart
+// ✅ — engine resolves AppAssets.logo across all files
+class AppAssets {
+  static const logo    = 'assets/images/logo.png';
+  static const bgLight = 'assets/images/bg_light.png';
+  static const bgDark  = 'assets/images/bg_dark.png';
+}
+```
 
 ---
 

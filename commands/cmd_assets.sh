@@ -1,462 +1,453 @@
 #!/usr/bin/env bash
-# =============================================================================
-#  flut assets — Analyse et nettoyage des assets Flutter inutilisés (Ultra Fast)
-#  Sourcé par flut.sh ; hérite de tous les globals et fonctions de log.
-# =============================================================================
+# ==============================================================================
+# cmd_assets.sh — Flutter Assets Analyzer (Bash 3.2 / macOS safe)
+# ==============================================================================
 
-# Convertit les octets en format lisible (B / KB / MB).
-_assets_human_size() {
-  local bytes="$1"
-  awk -v b="$bytes" 'BEGIN {
-    if (b < 1024)         { printf "%d B\n",    b }
-    else if (b < 1048576) { printf "%.1f KB\n", b/1024 }
-    else                  { printf "%.1f MB\n", b/1048576 }
+# ── Colors ─────────────────────────────────────────────────────────────────────
+_A_RESET="\033[0m"
+_A_RED="\033[31m"
+_A_YELLOW="\033[33m"
+_A_GREEN="\033[32m"
+_A_CYAN="\033[36m"
+_A_BOLD="\033[1m"
+_A_DIM="\033[2m"
+
+# ── Log helpers (fallback only — flut.sh canonical versions take precedence) ───
+if ! declare -f log_info >/dev/null 2>&1; then
+  log_info()    { echo -e "${_A_CYAN}  ->  ${_A_RESET}$1"; }
+  log_error()   { echo -e "${_A_RED}  xx  ${_A_RESET}$1"; }
+  log_success() { echo -e "${_A_GREEN}  ok  ${_A_RESET}$1"; }
+  log_warning() { echo -e "${_A_YELLOW}  !!  ${_A_RESET}$1"; }
+  log_section() { echo -e "\n${_A_BOLD}${_A_CYAN}>> $1${_A_RESET}"; }
+fi
+
+# ── Cache state ────────────────────────────────────────────────────────────────
+_ASSET_CACHE_DIR=""
+_ASSETS_USED_INDEX=""
+_ASSETS_PUBSPEC_INDEX=""
+
+# ── Init ───────────────────────────────────────────────────────────────────────
+_assets_init() {
+  _ASSET_CACHE_DIR="$(mktemp -d)"
+  trap 'rm -rf "$_ASSET_CACHE_DIR"' EXIT
+
+  _ASSETS_USED_INDEX="$_ASSET_CACHE_DIR/used.txt"
+  _ASSETS_PUBSPEC_INDEX="$_ASSET_CACHE_DIR/pubspec.txt"
+
+  : > "$_ASSETS_USED_INDEX"
+  : > "$_ASSETS_PUBSPEC_INDEX"
+}
+
+# ── Asset file listing ─────────────────────────────────────────────────────────
+_assets_list_files() {
+  find assets/ \
+    -type f \
+    -not -path "assets/translations/*" \
+    -not -name ".*" \
+    2>/dev/null
+}
+
+# ── Category detection (icons check must come before extension patterns) ───────
+_assets_category() {
+  case "$1" in
+    assets/icons/*)                        echo "icons"  ;;
+    *.png|*.jpg|*.jpeg|*.webp|*.svg|*.gif) echo "images" ;;
+    *.ttf|*.otf|*.woff|*.woff2)            echo "fonts"  ;;
+    *.json|*.riv|*.lottie)                 echo "lottie" ;;
+    *)                                     echo "other"  ;;
+  esac
+}
+
+# ── Size helpers ───────────────────────────────────────────────────────────────
+_assets_size() { stat -f%z "$1" 2>/dev/null || echo 0; }
+
+_assets_fmt_size() {
+  local b="$1"
+  awk -v b="$b" 'BEGIN {
+    if      (b < 1024)    printf "%d B",    b
+    else if (b < 1048576) printf "%.1f KB", b/1024
+    else                  printf "%.1f MB", b/1048576
   }'
 }
 
-# Retourne la taille en octets d'un fichier (portable et rapide).
-_assets_file_size() {
-  wc -c < "$1" | tr -d ' '
+_assets_color_size() {
+  local b="$1"
+  local s; s="$(_assets_fmt_size "$b")"
+  if   (( b > 1048576 )); then echo -e "${_A_RED}${s}${_A_RESET}"
+  elif (( b > 200000  )); then echo -e "${_A_YELLOW}${s}${_A_RESET}"
+  else                         echo -e "${_A_GREEN}${s}${_A_RESET}"
+  fi
 }
 
-# --- MOTEUR D'OPTIMISATION ULTRA-RAPIDE (ANTI-DOUBLONS) ---
-
-declare -A _ASSET_MATCHES
-
-# Pré-scanne le dossier lib/ en UNE SEULE PASSE via grep pour charger le cache.
-_assets_preload_cache() {
-  _ASSET_MATCHES=()
-  
-  # 1. On extrait un chemin partiel unique discriminant (ex: "images/logo.png")
-  # au lieu du simple "logo.png" pour gérer parfaitement les fichiers de même nom.
-  local patterns_file
-  patterns_file="$(mktemp)"
-  
-  while IFS= read -r asset; do
-    echo "${asset#assets/}" >> "$patterns_file"
-  done < <(_assets_list_files)
-  
-  [[ ! -s "$patterns_file" ]] && { rm -f "$patterns_file"; return 0; }
-
-  # 2. On cherche ces patterns uniques en une seule passe globale sur lib/
-  local file line content pattern
-  while IFS=: read -r file line content; do
-    # On ignore les commentaires de type '//'
-    [[ "$content" =~ ^[[:space:]]*// ]] && continue
-
-    while IFS= read -r pattern; do
-      if [[ "$content" == *"$pattern"* ]]; then
-        _ASSET_MATCHES["$pattern"]+="$file:$line:$content"$'\n'
-      fi
-    done < "$patterns_file"
-
-  done < <(grep -rnFf "$patterns_file" lib/ 2>/dev/null)
-
-  rm -f "$patterns_file"
+# ── Pubspec index ──────────────────────────────────────────────────────────────
+_assets_index_pubspec() {
+  awk '
+    $1 == "assets:" { flag=1; next }
+    flag && /^[a-zA-Z]/ { flag=0 }
+    flag && /- / { print "assets/" $2 }
+  ' pubspec.yaml 2>/dev/null > "$_ASSETS_PUBSPEC_INDEX"
 }
 
-# Vérification instantanée via notre index en mémoire
-_assets_is_used() {
-  local asset_path="$1"
-  local pattern="${asset_path#assets/}"
-
-  local matches="${_ASSET_MATCHES["$pattern"]:-}"
-  [[ -z "$matches" ]] && return 1
-
-  # Analyse uniquement les lignes de code liées à cet asset précis
-  while IFS=: read -r file line codeline; do
-    [[ -z "$codeline" ]] && continue
-
-    # Phase (b) : Si c'est une affectation de variable de type chaîne
-    if [[ "$codeline" =~ (const|final|var|String)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
-      local var_name="${BASH_REMATCH[2]}"
-      local ref_count
-      # On compte les références de la variable de manière ciblée
-      ref_count="$(grep -rnw --include='*.dart' "$var_name" lib/ 2>/dev/null | wc -l | tr -d ' ')"
-      
-      [[ "$ref_count" -gt 1 ]] && return 0
-    else
-      # Phase (a) : Utilisation directe (ex: Image.asset)
-      return 0
-    fi
-  done <<< "$matches"
-
-  return 1
+# ── Dart AST index ─────────────────────────────────────────────────────────────
+_assets_index_dart() {
+  local FLUT_HOME="${FLUT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  dart "$FLUT_HOME/engine/asset_analyzer.dart" > "$_ASSETS_USED_INDEX"
 }
 
-# --- FIN DU MOTEUR ---
-
-# Liste tous les fichiers d'assets sauf les traductions.
-_assets_list_files() {
-  find assets/ \
-    -not -path 'assets/translations/*' \
-    -type f \
-    -print 2>/dev/null \
-  | sort
+# ── Build indexes ──────────────────────────────────────────────────────────────
+_assets_build() {
+  _assets_init
+  log_info "Scanning pubspec..."
+  _assets_index_pubspec
+  log_info "Running Dart AST analysis..."
+  _assets_index_dart
+  log_success "Analysis complete"
 }
 
-# Compte total des fichiers d'assets.
-_assets_count_files() {
-  _assets_list_files | wc -l | tr -d ' '
-}
-
-# Affiche la barre de progression sur stderr.
-_assets_progress() {
-  [[ -t 2 ]] || return 0
-  printf "\r  ${CYAN}->  ${RESET} [%d/%d] Checking %-55s" "$1" "$2" "$3" >&2
-}
-
-# Efface la barre de progression.
-_assets_clear_progress() {
-  [[ -t 2 ]] || return 0
-  printf "\r%80s\r" "" >&2
-}
-
-# Catégorise les fichiers d'assets.
-_assets_category() {
-  case "$1" in
-    assets/images/*) echo "images" ;;
-    assets/icons/*)  echo "icons"  ;;
-    assets/lottie/*) echo "lottie" ;;
-    *)               echo "other"  ;;
-  esac
+# ── Git guard ──────────────────────────────────────────────────────────────────
+_assets_git_guard() {
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    log_error "Git working tree is not clean. Commit or stash changes first."
+    exit 1
+  fi
 }
 
 # ==============================================================================
-#  flut assets check
+# COMMAND: check
 # ==============================================================================
 _assets_cmd_check() {
-  log_section "Asset Usage Check"
+  [[ ! -d assets ]] && { log_error "No assets/ folder found. Run from the project root."; return 1; }
+
+  log_section "Asset Analysis"
   echo ""
 
-  if [[ ! -d "assets" ]]; then
-    log_error "No assets/ directory found. Run from the project root."
-    exit 1
-  fi
+  _assets_build
+  echo ""
 
-  log_info "Indexing project files (Optimized Anti-Collision)..."
-  _assets_preload_cache
+  local tmp="$_ASSET_CACHE_DIR/unused.tmp"
+  : > "$tmp"
 
-  local unused_paths=()
-  local unused_sizes=()
-  local total_count=0
+  local total_scanned=0
+  local total_unused=0
   local total_bytes=0
-  local _total_files _scan_idx
-  _total_files="$(_assets_count_files)"
-  _scan_idx=0
 
   while IFS= read -r asset; do
-    [[ -z "$asset" ]] && continue
-    _scan_idx=$((_scan_idx + 1))
-    _assets_progress "$_scan_idx" "$_total_files" "$asset"
-    total_count=$((total_count + 1))
-    local size
-    size="$(_assets_file_size "$asset")"
-    total_bytes=$((total_bytes + size))
-
-    if ! _assets_is_used "$asset"; then
-      unused_paths+=("$asset")
-      unused_sizes+=("$size")
+    total_scanned=$(( total_scanned + 1 ))
+    if ! grep -Fq "$asset" "$_ASSETS_USED_INDEX"; then
+      local size; size=$(_assets_size "$asset")
+      local cat;  cat=$(_assets_category "$asset")
+      echo "$asset|$size|$cat" >> "$tmp"
+      total_unused=$(( total_unused + 1 ))
+      total_bytes=$(( total_bytes + size ))
     fi
   done < <(_assets_list_files)
-  _assets_clear_progress
 
-  if [[ $total_count -eq 0 ]]; then
-    log_info "No assets found (excluding translations)."
+  if [[ $total_unused -eq 0 ]]; then
+    log_success "All $total_scanned assets are referenced in code — nothing to clean."
     echo ""
     return 0
   fi
 
-  if [[ ${#unused_paths[@]} -eq 0 ]]; then
-    log_success "All $total_count asset(s) are referenced in Dart code."
-    echo ""
-    return 0
-  fi
+  printf "  ${_A_BOLD}%-10s  %-65s  %s${_A_RESET}\n" "TYPE" "PATH" "SIZE"
+  printf "  %s\n" "--------  -----------------------------------------------------------------  --------"
 
-  echo -e "  ${YELLOW}Unused assets:${RESET}"
-  echo ""
-  local total_unused_bytes=0
-  local i=0
-  while [[ $i -lt ${#unused_paths[@]} ]]; do
-    local sz_human
-    sz_human="$(_assets_human_size "${unused_sizes[$i]}")"
-    echo -e "    ${YELLOW}${unused_paths[$i]}${RESET}  (${sz_human})"
-    total_unused_bytes=$((total_unused_bytes + unused_sizes[i]))
-    i=$((i + 1))
+  sort -t'|' -k2 -nr "$tmp" | while IFS='|' read -r asset size cat; do
+    printf "  ${_A_DIM}%-10s${_A_RESET}  %-65s  %s\n" \
+      "$cat" "$asset" "$(_assets_color_size "$size")"
   done
 
   echo ""
-  local wasted_human
-  wasted_human="$(_assets_human_size "$total_unused_bytes")"
-  echo -e "  ${YELLOW}${#unused_paths[@]} unused asset(s) — ${wasted_human} wasted${RESET}"
-  echo -e "  Scanned: $total_count asset(s) total"
+
+  local impact_label
+  if   (( total_bytes > 1048576 )); then impact_label="${_A_RED}HIGH${_A_RESET}"
+  elif (( total_bytes > 200000  )); then impact_label="${_A_YELLOW}MEDIUM${_A_RESET}"
+  else                                   impact_label="${_A_GREEN}LOW${_A_RESET}"
+  fi
+
+  printf "  ${_A_BOLD}%-16s${_A_RESET} %s / %s unused\n" \
+    "Scanned" "$total_unused" "$total_scanned"
+  printf "  ${_A_BOLD}%-16s${_A_RESET} %s\n" \
+    "Wasted space" "$(_assets_fmt_size "$total_bytes")"
+  printf "  ${_A_BOLD}%-16s${_A_RESET} %b\n" \
+    "Impact" "$impact_label"
+
   echo ""
-  return 1
+  log_info "Run 'flut assets clean' to remove unused assets interactively."
+  log_info "Run 'flut assets clean --dry-run' to preview, or --all to delete everything."
+  echo ""
 }
 
 # ==============================================================================
-#  flut assets stats
+# COMMAND: stats
 # ==============================================================================
 _assets_cmd_stats() {
-  log_section "Asset Statistics"
+  [[ ! -d assets ]] && { log_error "No assets/ folder found."; return 1; }
+
+  log_section "Asset Stats"
   echo ""
 
-  if [[ ! -d "assets" ]]; then
-    log_error "No assets/ directory found. Run from the project root."
-    exit 1
-  fi
+  _assets_build
+  echo ""
 
-  log_info "Indexing project files (Optimized Anti-Collision)..."
-  _assets_preload_cache
-
-  local count_images=0 bytes_images=0 uc_images=0 ub_images=0
-  local count_icons=0  bytes_icons=0  uc_icons=0  ub_icons=0
-  local count_lottie=0 bytes_lottie=0 uc_lottie=0 ub_lottie=0
-  local count_other=0  bytes_other=0  uc_other=0  ub_other=0
-  local grand_total=0  grand_bytes=0  grand_uc=0   grand_ub=0
-  local _total_files _scan_idx
-  _total_files="$(_assets_count_files)"
-  _scan_idx=0
+  local cat_tmp="$_ASSET_CACHE_DIR/cat_stats.txt"
+  : > "$cat_tmp"
 
   while IFS= read -r asset; do
-    [[ -z "$asset" ]] && continue
-    _scan_idx=$((_scan_idx + 1))
-    _assets_progress "$_scan_idx" "$_total_files" "$asset"
-    local size cat used
-    size="$(_assets_file_size "$asset")"
-    cat="$(_assets_category "$asset")"
-    if _assets_is_used "$asset"; then used=1; else used=0; fi
-
-    grand_total=$((grand_total + 1))
-    grand_bytes=$((grand_bytes + size))
-    if [[ $used -eq 0 ]]; then
-      grand_uc=$((grand_uc + 1))
-      grand_ub=$((grand_ub + size))
-    fi
-
-    case "$cat" in
-      images)
-        count_images=$((count_images + 1)); bytes_images=$((bytes_images + size))
-        [[ $used -eq 0 ]] && { uc_images=$((uc_images + 1)); ub_images=$((ub_images + size)); }
-        ;;
-      icons)
-        count_icons=$((count_icons + 1)); bytes_icons=$((bytes_icons + size))
-        [[ $used -eq 0 ]] && { uc_icons=$((uc_icons + 1)); ub_icons=$((ub_icons + size)); }
-        ;;
-      lottie)
-        count_lottie=$((count_lottie + 1)); bytes_lottie=$((bytes_lottie + size))
-        [[ $used -eq 0 ]] && { uc_lottie=$((uc_lottie + 1)); ub_lottie=$((ub_lottie + size)); }
-        ;;
-      other)
-        count_other=$((count_other + 1)); bytes_other=$((bytes_other + size))
-        [[ $used -eq 0 ]] && { uc_other=$((uc_other + 1)); ub_other=$((ub_other + size)); }
-        ;;
-    esac
+    local size; size=$(_assets_size "$asset")
+    local cat;  cat=$(_assets_category "$asset")
+    local is_used=0
+    grep -Fq "$asset" "$_ASSETS_USED_INDEX" && is_used=1
+    echo "$cat|$size|$is_used" >> "$cat_tmp"
   done < <(_assets_list_files)
-  _assets_clear_progress
 
-  if [[ $grand_total -eq 0 ]]; then
-    log_info "No assets found (excluding translations)."
-    echo ""
-    return 0
-  fi
+  local total used unused
+  total=$(wc -l < "$cat_tmp" | tr -d ' ')
+  used=$(  grep "|1$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+  unused=$(grep "|0$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
 
-  local sep="  ─────────────────────────────────────────────────────"
-  printf "  ${BOLD}%-10s  %6s  %10s  %8s  %12s${RESET}\n" \
-    "Category" "Count" "Size" "Unused" "Unused size"
-  echo "$sep"
+  printf "  ${_A_BOLD}%-14s${_A_RESET} %s\n"                          "Total"  "$total"
+  printf "  ${_A_BOLD}%-14s${_A_RESET} ${_A_GREEN}%s${_A_RESET}\n"   "Used"   "$used"
+  printf "  ${_A_BOLD}%-14s${_A_RESET} ${_A_YELLOW}%s${_A_RESET}\n"  "Unused" "$unused"
 
-  _assets_print_row() {
-    local cat="$1" count="$2" bytes="$3" uc="$4" ub="$5"
-    [[ $count -eq 0 ]] && return
-    local sz_h ub_h
-    sz_h="$(_assets_human_size "$bytes")"
-    ub_h="$(_assets_human_size "$ub")"
-    local unused_display="$uc"
-    [[ $uc -eq 0 ]] && unused_display="${GREEN}${uc}${RESET}" || unused_display="${YELLOW}${uc}${RESET}"
-    printf "  %-10s  %6d  %10s  " "$cat" "$count" "$sz_h"
-    echo -ne "${unused_display}"
-    printf "  %12s\n" "$ub_h"
-  }
+  echo ""
 
-  _assets_print_row "images" "$count_images" "$bytes_images" "$uc_images" "$ub_images"
-  _assets_print_row "icons"  "$count_icons"  "$bytes_icons"  "$uc_icons"  "$ub_icons"
-  _assets_print_row "lottie" "$count_lottie" "$bytes_lottie" "$uc_lottie" "$ub_lottie"
-  _assets_print_row "other"  "$count_other"  "$bytes_other"  "$uc_other"  "$ub_other"
+  printf "  ${_A_BOLD}%-10s  %6s  %6s  %8s  %10s${_A_RESET}\n" \
+    "CATEGORY" "TOTAL" "USED" "UNUSED" "SIZE"
+  printf "  %s\n" "----------  ------  ------  --------  ----------"
 
-  echo "$sep"
-  local gtotal_sz grand_ub_h
-  gtotal_sz="$(_assets_human_size "$grand_bytes")"
-  grand_ub_h="$(_assets_human_size "$grand_ub")"
-  local uc_display
-  [[ $grand_uc -eq 0 ]] && uc_display="${GREEN}${grand_uc}${RESET}" || uc_display="${YELLOW}${grand_uc}${RESET}"
-  printf "  ${BOLD}%-10s  %6d  %10s  ${RESET}" "Total" "$grand_total" "$gtotal_sz"
-  echo -ne "${uc_display}"
-  printf "  ${BOLD}%12s${RESET}\n" "$grand_ub_h"
+  for cat in images icons fonts lottie other; do
+    local c_total c_used c_unused c_size
+    c_total=$(  grep "^${cat}|" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+    [[ "$c_total" -eq 0 ]] && continue
+
+    c_used=$(   grep "^${cat}|.*|1$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+    c_unused=$( grep "^${cat}|.*|0$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+    c_size=$(   awk -F'|' -v cat="$cat" '$1==cat{s+=$2} END{print s+0}' "$cat_tmp")
+
+    local unused_col="$c_unused"
+    [[ "$c_unused" -gt 0 ]] && unused_col="${_A_YELLOW}${c_unused}${_A_RESET}"
+
+    printf "  %-10s  %6s  %6s  %8b  %10s\n" \
+      "$cat" "$c_total" "$c_used" "$unused_col" "$(_assets_fmt_size "$c_size")"
+  done
+
   echo ""
 }
 
 # ==============================================================================
-#  flut assets clean [--all] [--dry-run]
+# COMMAND: audit
+# ==============================================================================
+_assets_cmd_audit() {
+  [[ ! -d assets ]] && { log_error "No assets/ folder found."; return 1; }
+
+  log_section "Asset Audit"
+  echo ""
+
+  _assets_build
+  echo ""
+
+  local used_count
+  used_count=$(wc -l < "$_ASSETS_USED_INDEX" | tr -d ' ')
+  log_info "$used_count asset reference(s) detected in Dart code"
+  echo ""
+
+  # ── Assets referenced in code but absent from pubspec ─────────────────────────
+  local missing_pubspec=0
+  while IFS= read -r asset; do
+    [[ -z "$asset" ]] && continue
+    if ! grep -Fq "$asset" "$_ASSETS_PUBSPEC_INDEX"; then
+      if [[ $missing_pubspec -eq 0 ]]; then
+        printf "  ${_A_BOLD}${_A_RED}Referenced in code, missing from pubspec.yaml:${_A_RESET}\n\n"
+      fi
+      printf "    ${_A_RED}%s${_A_RESET}\n" "$asset"
+      missing_pubspec=$(( missing_pubspec + 1 ))
+    fi
+  done < "$_ASSETS_USED_INDEX"
+
+  [[ $missing_pubspec -gt 0 ]] && echo ""
+
+  # ── Entries declared in pubspec but not referenced anywhere ───────────────────
+  local orphan_pubspec=0
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
+    if ! grep -Fq "$entry" "$_ASSETS_USED_INDEX"; then
+      if [[ $orphan_pubspec -eq 0 ]]; then
+        printf "  ${_A_BOLD}${_A_DIM}Declared in pubspec, not referenced in code:${_A_RESET}\n\n"
+      fi
+      printf "    ${_A_DIM}%s${_A_RESET}\n" "$entry"
+      orphan_pubspec=$(( orphan_pubspec + 1 ))
+    fi
+  done < "$_ASSETS_PUBSPEC_INDEX"
+
+  [[ $orphan_pubspec -gt 0 ]] && echo ""
+
+  # ── Summary ────────────────────────────────────────────────────────────────────
+  if [[ $missing_pubspec -eq 0 && $orphan_pubspec -eq 0 ]]; then
+    log_success "pubspec.yaml and code references are in sync."
+  else
+    [[ $missing_pubspec  -gt 0 ]] && log_error   "$missing_pubspec asset(s) used in code but not declared in pubspec"
+    [[ $orphan_pubspec   -gt 0 ]] && log_warning "$orphan_pubspec pubspec entry(ies) not referenced in Dart code"
+  fi
+  echo ""
+}
+
+# ==============================================================================
+# COMMAND: clean
 # ==============================================================================
 _assets_cmd_clean() {
-  local do_all=false dry_run=false
+  local mode="interactive"
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --all)     do_all=true;  shift ;;
-      --dry-run) dry_run=true; shift ;;
-      *)
-        log_error "Unknown flag: $1"
-        echo "  Usage: flut assets clean [--all] [--dry-run]"
-        exit 1
-        ;;
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) mode="dry"         ;;
+      --all)     mode="all"         ;;
+      *) log_error "Unknown option: $arg  (valid: --dry-run, --all)"; return 1 ;;
     esac
   done
 
-  local section_label="Asset Cleanup"
-  [[ "$dry_run" == true ]] && section_label="Asset Cleanup (dry run)"
-  log_section "$section_label"
+  [[ ! -d assets ]] && { log_error "No assets/ folder found."; return 1; }
+
+  [[ "$mode" != "dry" ]] && _assets_git_guard
+
+  log_section "Asset Cleanup"
   echo ""
 
-  if [[ ! -d "assets" ]]; then
-    log_error "No assets/ directory found. Run from the project root."
-    exit 1
-  fi
+  _assets_build
+  echo ""
 
-  log_info "Indexing project files (Optimized Anti-Collision)..."
-  _assets_preload_cache
-
-  local unused_paths=()
-  local unused_sizes=()
-  local _total_files _scan_idx
-  _total_files="$(_assets_count_files)"
-  _scan_idx=0
+  local list="$_ASSET_CACHE_DIR/delete.list"
+  : > "$list"
 
   while IFS= read -r asset; do
-    [[ -z "$asset" ]] && continue
-    _scan_idx=$((_scan_idx + 1))
-    _assets_progress "$_scan_idx" "$_total_files" "$asset"
-    if ! _assets_is_used "$asset"; then
-      unused_paths+=("$asset")
-      unused_sizes+=("$(_assets_file_size "$asset")")
+    if ! grep -Fq "$asset" "$_ASSETS_USED_INDEX"; then
+      echo "$asset" >> "$list"
     fi
   done < <(_assets_list_files)
-  _assets_clear_progress
 
-  if [[ ${#unused_paths[@]} -eq 0 ]]; then
-    log_success "No unused assets found."
+  local count; count=$(wc -l < "$list" | tr -d ' ')
+
+  if [[ "$count" -eq 0 ]]; then
+    log_success "No unused assets found — nothing to delete."
     echo ""
     return 0
   fi
 
-  local deleted_count=0
-  local deleted_bytes=0
+  log_info "$count unused asset(s) identified"
+  echo ""
 
-  if [[ "$do_all" == true ]]; then
-    echo -e "  ${YELLOW}The following ${#unused_paths[@]} asset(s) will be deleted:${RESET}"
+  # ── Dry run ────────────────────────────────────────────────────────────────────
+  if [[ "$mode" == "dry" ]]; then
+    printf "  ${_A_BOLD}${_A_YELLOW}Dry run — files that would be deleted:${_A_RESET}\n\n"
+    local dry_bytes=0
+    while IFS= read -r f; do
+      local size; size=$(_assets_size "$f")
+      dry_bytes=$(( dry_bytes + size ))
+      printf "    %-65s  %s\n" "$f" "$(_assets_fmt_size "$size")"
+    done < "$list"
     echo ""
-    for p in "${unused_paths[@]}"; do
-      echo "    $p"
-    done
+    log_info "Total: $count file(s), $(_assets_fmt_size "$dry_bytes") would be freed."
     echo ""
-
-    local confirm
-    read -r -p "  Delete all? [y/N] " confirm
-    echo ""
-
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-      local i=0
-      while [[ $i -lt ${#unused_paths[@]} ]]; do
-        if [[ "$dry_run" == false ]]; then
-          rm -- "${unused_paths[$i]}"
-        fi
-        log_info "Deleted: ${unused_paths[$i]}"
-        deleted_count=$((deleted_count + 1))
-        deleted_bytes=$((deleted_bytes + unused_sizes[i]))
-        i=$((i + 1))
-      done
-    else
-      log_info "Aborted."
-      echo ""
-      return 0
-    fi
-
-  else
-    local i=0
-    while [[ $i -lt ${#unused_paths[@]} ]]; do
-      local sz_human
-      sz_human="$(_assets_human_size "${unused_sizes[$i]}")"
-      echo ""
-      echo -e "  ${YELLOW}${unused_paths[$i]}${RESET}  (${sz_human})"
-      local choice
-      read -r -p "  Delete? [y/N/q] " choice
-      case "$choice" in
-        [Yy])
-          if [[ "$dry_run" == false ]]; then
-            rm -- "${unused_paths[$i]}"
-          fi
-          log_success "Deleted: ${unused_paths[$i]}"
-          deleted_count=$((deleted_count + 1))
-          deleted_bytes=$((deleted_bytes + unused_sizes[i]))
-          ;;
-        [Qq])
-          log_info "Quit."
-          break
-          ;;
-        *)
-          log_info "Skipped."
-          ;;
-      esac
-      i=$((i + 1))
-    done
+    return 0
   fi
 
-  echo ""
-  local freed_human
-  freed_human="$(_assets_human_size "$deleted_bytes")"
-  if [[ "$dry_run" == true ]]; then
-    log_info "Dry run — $deleted_count file(s) would be deleted (${freed_human})."
+  # ── Delete all ─────────────────────────────────────────────────────────────────
+  if [[ "$mode" == "all" ]]; then
+    local total_freed=0
+    while IFS= read -r f; do
+      local size; size=$(_assets_size "$f")
+      total_freed=$(( total_freed + size ))
+      rm -f "$f"
+      log_success "Deleted  $f"
+    done < "$list"
+    echo ""
+    log_success "$count file(s) deleted — $(_assets_fmt_size "$total_freed") freed."
+    echo ""
+    return 0
+  fi
+
+  # ── Interactive ────────────────────────────────────────────────────────────────
+  printf "  ${_A_BOLD}Reviewing $count candidate(s):${_A_RESET}\n\n"
+
+  local deleted=0 freed=0
+  while IFS= read -r f; do
+    local size; size=$(_assets_size "$f")
+    printf "  %s  ${_A_DIM}(%s)${_A_RESET}\n" "$f" "$(_assets_fmt_size "$size")"
+    printf "  Delete? [y/N/q] "
+    read -r r
+    case "$r" in
+      y|Y)
+        rm -f "$f"
+        deleted=$(( deleted + 1 ))
+        freed=$(( freed + size ))
+        log_success "Deleted"
+        ;;
+      q|Q)
+        echo ""
+        log_info "Stopped. $deleted file(s) deleted."
+        echo ""
+        return 0
+        ;;
+      *)
+        log_info "Skipped"
+        ;;
+    esac
+    echo ""
+  done < "$list"
+
+  if [[ $deleted -gt 0 ]]; then
+    log_success "$deleted file(s) deleted — $(_assets_fmt_size "$freed") freed."
   else
-    log_success "$deleted_count file(s) deleted — ${freed_human} freed."
+    log_info "No files deleted."
   fi
   echo ""
 }
 
+# ==============================================================================
+# USAGE
+# ==============================================================================
 _assets_usage() {
   echo ""
-  echo -e "  ${BOLD}flut assets${RESET} — Detect and remove unused Flutter assets"
+  echo -e "  ${_A_BOLD}flut assets${_A_RESET}  Flutter Asset Analyzer"
   echo ""
-  echo -e "  ${CYAN}flut assets check${RESET}               List unused assets with sizes"
-  echo -e "  ${CYAN}flut assets stats${RESET}               Statistics table by category"
-  echo -e "  ${CYAN}flut assets clean${RESET}               Delete unused assets one by one"
-  echo -e "  ${CYAN}flut assets clean --all${RESET}         Delete all unused (single confirmation)"
-  echo -e "  ${CYAN}flut assets clean --dry-run${RESET}     Show what would be deleted"
+  echo -e "  ${_A_CYAN}Usage:${_A_RESET}"
+  echo "    flut assets <command> [options]"
+  echo ""
+  echo -e "  ${_A_CYAN}Commands:${_A_RESET}"
+  echo "    check      Scan for unused assets, sorted by wasted size"
+  echo "    stats      Breakdown by category (total / used / unused)"
+  echo "    audit      Validate pubspec declarations vs code references"
+  echo "    clean      Remove unused assets interactively or in bulk"
+  echo ""
+  echo -e "  ${_A_CYAN}Options (clean only):${_A_RESET}"
+  echo "    --dry-run  Preview deletions without touching any file"
+  echo "    --all      Delete all unused assets without prompting"
+  echo ""
+  echo -e "  ${_A_CYAN}Examples:${_A_RESET}"
+  echo "    flut assets check"
+  echo "    flut assets stats"
+  echo "    flut assets audit"
+  echo "    flut assets clean --dry-run"
+  echo "    flut assets clean --all"
+  echo ""
+  echo -e "  ${_A_CYAN}Notes:${_A_RESET}"
+  echo "    Powered by a hybrid Dart AST + regex engine."
+  echo "    Translations (assets/translations/) are excluded from analysis."
+  echo "    'clean' requires a clean git working tree (except with --dry-run)."
   echo ""
 }
 
 # ==============================================================================
-#  flut assets — dispatcher (Calcul automatique de la durée)
+# DISPATCHER
 # ==============================================================================
 cmd_assets() {
-  local start_time=$SECONDS
   local subcmd="${1:-}"
-  [[ $# -gt 0 ]] && shift || true
+  shift || true
 
   case "$subcmd" in
-    check)        _assets_cmd_check ;;
-    stats)        _assets_cmd_stats ;;
-    clean)        _assets_cmd_clean "$@" ;;
-    -h|--help|"") _assets_usage ;;
-    *)
-      log_error "Unknown assets subcommand: $subcmd"
-      echo "  Usage: flut assets <check|stats|clean>"
-      exit 1
-      ;;
+    check) _assets_cmd_check "$@" ;;
+    stats) _assets_cmd_stats "$@" ;;
+    audit) _assets_cmd_audit "$@" ;;
+    clean) _assets_cmd_clean "$@" ;;
+    *)     _assets_usage ;;
   esac
-
-  # Calcul et affichage de la durée d'exécution globale
-  local duration=$((SECONDS - start_time))
-  echo -e "  ${CYAN}Execution time:${RESET} ${duration}s"
-  echo ""
 }
