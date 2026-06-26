@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  flut assets — Analyse et nettoyage des assets Flutter inutilisés
+#  flut assets — Analyse et nettoyage des assets Flutter inutilisés (Ultra Fast)
 #  Sourcé par flut.sh ; hérite de tous les globals et fonctions de log.
 # =============================================================================
 
-# Convert bytes to human-readable string (B / KB / MB).
+# Convertit les octets en format lisible (B / KB / MB).
 _assets_human_size() {
   local bytes="$1"
   awk -v b="$bytes" 'BEGIN {
@@ -14,86 +14,79 @@ _assets_human_size() {
   }'
 }
 
-# Return byte count of a single file (portable: avoids stat differences).
+# Retourne la taille en octets d'un fichier (portable et rapide).
 _assets_file_size() {
   wc -c < "$1" | tr -d ' '
 }
 
-# --- OPTIMIZATION ENGINE ---
+# --- MOTEUR D'OPTIMISATION ULTRA-RAPIDE (ANTI-DOUBLONS) ---
 
-# Global associative arrays to act as our fast memory cache
 declare -A _ASSET_MATCHES
-declare -A _DART_LINE_CACHE
 
-# Pre-scans the entire lib/ folder ONCE to dramatically boost performance.
+# Pré-scanne le dossier lib/ en UNE SEULE PASSE via grep pour charger le cache.
 _assets_preload_cache() {
-  # Flush any existing cache
   _ASSET_MATCHES=()
-  _DART_LINE_CACHE=()
+  
+  # 1. On extrait un chemin partiel unique discriminant (ex: "images/logo.png")
+  # au lieu du simple "logo.png" pour gérer parfaitement les fichiers de même nom.
+  local patterns_file
+  patterns_file="$(mktemp)"
+  
+  while IFS= read -r asset; do
+    echo "${asset#assets/}" >> "$patterns_file"
+  done < <(_assets_list_files)
+  
+  [[ ! -s "$patterns_file" ]] && { rm -f "$patterns_file"; return 0; }
 
-  # 1. Grab every line of Dart code excluding comments
-  # 2. Group them by whatever asset basenames are found in them
-  local file line content bname
+  # 2. On cherche ces patterns uniques en une seule passe globale sur lib/
+  local file line content pattern
   while IFS=: read -r file line content; do
-    # Simple check: does this line look like a comment? Skip if so.
+    # On ignore les commentaires de type '//'
     [[ "$content" =~ ^[[:space:]]*// ]] && continue
 
-    # Cache the raw content indexed by file:line for variable reference checks later
-    _DART_LINE_CACHE["$file:$line"]="$content"
+    while IFS= read -r pattern; do
+      if [[ "$content" == *"$pattern"* ]]; then
+        _ASSET_MATCHES["$pattern"]+="$file:$line:$content"$'\n'
+      fi
+    done < "$patterns_file"
 
-    # Find any potential asset basenames on this line. 
-    # Assumes common asset extensions to quickly extract filenames.
-    while [[ "$content" =~ ([a-zA-Z0-9_\-]+\.(png|jpg|jpeg|gif|svg|json|webp|ttf|woff2?)) ]]; do
-      bname="${BASH_REMATCH[1]}"
-      # Store the file:line reference under this asset basename
-      _ASSET_MATCHES["$bname"]+="$file:$line "
-      # Strip out the matched part so we can catch other basenames on the same line
-      content="${content//${BASH_REMATCH[0]}/}"
-    done
-  done < <(grep -rn --include='*.dart' '.' lib/ 2>/dev/null)
+  done < <(grep -rnFf "$patterns_file" lib/ 2>/dev/null)
+
+  rm -f "$patterns_file"
 }
 
-# Ultra-fast check using our preloaded index
+# Vérification instantanée via notre index en mémoire
 _assets_is_used() {
   local asset_path="$1"
-  local bname
-  bname="$(basename "$asset_path")"
+  local pattern="${asset_path#assets/}"
 
-  # Retrieve pre-cached lines that contain this filename
-  local refs="${_ASSET_MATCHES["$bname"]:-}"
-  [[ -z "$refs" ]] && return 1
+  local matches="${_ASSET_MATCHES["$pattern"]:-}"
+  [[ -z "$matches" ]] && return 1
 
-  # Phase (b): Variable reference fast-counting
-  # If we need to count variable occurrences, we also scan all dart lines once for variable names
-  for ref in $refs; do
-    local codeline="${_DART_LINE_CACHE["$ref"]}"
-    
-    # Is it a variable assignment?
+  # Analyse uniquement les lignes de code liées à cet asset précis
+  while IFS=: read -r file line codeline; do
+    [[ -z "$codeline" ]] && continue
+
+    # Phase (b) : Si c'est une affectation de variable de type chaîne
     if [[ "$codeline" =~ (const|final|var|String)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
       local var_name="${BASH_REMATCH[2]}"
+      local ref_count
+      # On compte les références de la variable de manière ciblée
+      ref_count="$(grep -rnw --include='*.dart' "$var_name" lib/ 2>/dev/null | wc -l | tr -d ' ')"
       
-      # Quick check: How many times does this exact variable name appear across our cached code?
-      local count=0
-      for c in "${_DART_LINE_CACHE[@]}"; do
-        if [[ "$c" =~ \b"$var_name"\b ]]; then
-          count=$((count + 1))
-          if [[ $count -gt 1 ]]; then
-            return 0 # Used beyond declaration!
-          fi
-        fi
-      done
+      [[ "$ref_count" -gt 1 ]] && return 0
     else
-      # Phase (a): Direct usage found on this line
+      # Phase (a) : Utilisation directe (ex: Image.asset)
       return 0
     fi
-  done
+  done <<< "$matches"
 
   return 1
 }
 
-# --- END OPTIMIZATION ENGINE ---
+# --- FIN DU MOTEUR ---
 
-# Print all asset file paths (one per line), excluding assets/translations/.
+# Liste tous les fichiers d'assets sauf les traductions.
 _assets_list_files() {
   find assets/ \
     -not -path 'assets/translations/*' \
@@ -102,24 +95,24 @@ _assets_list_files() {
   | sort
 }
 
-# Count asset files (used to build the [N/M] progress counter).
+# Compte total des fichiers d'assets.
 _assets_count_files() {
   _assets_list_files | wc -l | tr -d ' '
 }
 
-# Write a \r-overwriting progress line to stderr (terminal only).
+# Affiche la barre de progression sur stderr.
 _assets_progress() {
   [[ -t 2 ]] || return 0
   printf "\r  ${CYAN}->  ${RESET} [%d/%d] Checking %-55s" "$1" "$2" "$3" >&2
 }
 
-# Clear the progress line (call after the scan loop ends).
+# Efface la barre de progression.
 _assets_clear_progress() {
   [[ -t 2 ]] || return 0
   printf "\r%80s\r" "" >&2
 }
 
-# Classify an asset path into a category: images | icons | lottie | other
+# Catégorise les fichiers d'assets.
 _assets_category() {
   case "$1" in
     assets/images/*) echo "images" ;;
@@ -141,7 +134,7 @@ _assets_cmd_check() {
     exit 1
   fi
 
-  log_info "Indexing project files..."
+  log_info "Indexing project files (Optimized Anti-Collision)..."
   _assets_preload_cache
 
   local unused_paths=()
@@ -213,7 +206,7 @@ _assets_cmd_stats() {
     exit 1
   fi
 
-  log_info "Indexing project files..."
+  log_info "Indexing project files (Optimized Anti-Collision)..."
   _assets_preload_cache
 
   local count_images=0 bytes_images=0 uc_images=0 ub_images=0
@@ -331,7 +324,7 @@ _assets_cmd_clean() {
     exit 1
   fi
 
-  log_info "Indexing project files..."
+  log_info "Indexing project files (Optimized Anti-Collision)..."
   _assets_preload_cache
 
   local unused_paths=()
@@ -443,7 +436,7 @@ _assets_usage() {
 }
 
 # ==============================================================================
-#  flut assets — dispatcher (With embedded duration calculation)
+#  flut assets — dispatcher (Calcul automatique de la durée)
 # ==============================================================================
 cmd_assets() {
   local start_time=$SECONDS
@@ -462,7 +455,7 @@ cmd_assets() {
       ;;
   esac
 
-  # Output total run duration at the very bottom
+  # Calcul et affichage de la durée d'exécution globale
   local duration=$((SECONDS - start_time))
   echo -e "  ${CYAN}Execution time:${RESET} ${duration}s"
   echo ""
