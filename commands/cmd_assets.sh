@@ -91,7 +91,7 @@ _assets_index_pubspec() {
 # ── Dart AST index ─────────────────────────────────────────────────────────────
 _assets_index_dart() {
   local FLUT_HOME="${FLUT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-  dart "$FLUT_HOME/engine/asset_analyzer.dart" > "$_ASSETS_USED_INDEX"
+  dart "$FLUT_HOME/engine/asset_analyzer.dart" < /dev/null > "$_ASSETS_USED_INDEX"
 }
 
 # ── Build indexes ──────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ _assets_cmd_clean() {
     local size; size=$(_assets_size "$f")
     printf "  %s  ${_A_DIM}(%s)${_A_RESET}\n" "$f" "$(_assets_fmt_size "$size")"
     printf "  Delete? [y/N/q] "
-    read -r r
+    read -r r < /dev/tty
     case "$r" in
       y|Y)
         rm -f "$f"
