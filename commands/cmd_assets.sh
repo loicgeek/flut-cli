@@ -19,56 +19,79 @@ _assets_file_size() {
   wc -c < "$1" | tr -d ' '
 }
 
-# Return 0 if the asset is effectively used in lib/**/*.dart, 1 otherwise.
-#
-# Two-phase detection:
-#   (a) Direct usage  — the path/filename appears on a non-assignment line
-#       (e.g. Image.asset('assets/images/logo.png')).
-#   (b) Variable hold — the path only appears inside a string assignment
-#       (const x = 'assets/...').  We then extract the variable name and
-#       check if it is referenced on more than one line; if so it is consumed
-#       somewhere and the asset is considered used.  If the variable appears
-#       only on its own declaration line, the asset is unused.
+# --- OPTIMIZATION ENGINE ---
+
+# Global associative arrays to act as our fast memory cache
+declare -A _ASSET_MATCHES
+declare -A _DART_LINE_CACHE
+
+# Pre-scans the entire lib/ folder ONCE to dramatically boost performance.
+_assets_preload_cache() {
+  # Flush any existing cache
+  _ASSET_MATCHES=()
+  _DART_LINE_CACHE=()
+
+  # 1. Grab every line of Dart code excluding comments
+  # 2. Group them by whatever asset basenames are found in them
+  local file line content bname
+  while IFS=: read -r file line content; do
+    # Simple check: does this line look like a comment? Skip if so.
+    [[ "$content" =~ ^[[:space:]]*// ]] && continue
+
+    # Cache the raw content indexed by file:line for variable reference checks later
+    _DART_LINE_CACHE["$file:$line"]="$content"
+
+    # Find any potential asset basenames on this line. 
+    # Assumes common asset extensions to quickly extract filenames.
+    while [[ "$content" =~ ([a-zA-Z0-9_\-]+\.(png|jpg|jpeg|gif|svg|json|webp|ttf|woff2?)) ]]; do
+      bname="${BASH_REMATCH[1]}"
+      # Store the file:line reference under this asset basename
+      _ASSET_MATCHES["$bname"]+="$file:$line "
+      # Strip out the matched part so we can catch other basenames on the same line
+      content="${content//${BASH_REMATCH[0]}/}"
+    done
+  done < <(grep -rn --include='*.dart' '.' lib/ 2>/dev/null)
+}
+
+# Ultra-fast check using our preloaded index
 _assets_is_used() {
   local asset_path="$1"
   local bname
   bname="$(basename "$asset_path")"
 
-  # All non-comment code lines in lib/ that mention the asset.
-  local all_matches
-  all_matches="$(grep -rn --include='*.dart' -E "(${bname}|${asset_path})" lib/ 2>/dev/null \
-    | grep -vE ":[[:space:]]*//")"
+  # Retrieve pre-cached lines that contain this filename
+  local refs="${_ASSET_MATCHES["$bname"]:-}"
+  [[ -z "$refs" ]] && return 1
 
-  [[ -z "$all_matches" ]] && return 1
-
-  # Phase (a): any line that is NOT a string assignment → direct usage.
-  if printf '%s\n' "$all_matches" | grep -qvE "=\s*['\"]"; then
-    return 0
-  fi
-
-  # Phase (b): every occurrence is a string assignment.
-  # For each, extract the variable name and count its total references.
-  # ref_count > 1 means the variable is used beyond its own declaration.
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-
-    local codeline var_name ref_count
-    codeline="$(printf '%s' "$match" | cut -d: -f3-)"
-    var_name="$(printf '%s' "$codeline" \
-      | grep -oE '[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*=' \
-      | tail -1 \
-      | sed 's/[[:space:]]*=$//')"
-
-    [[ -z "$var_name" ]] && continue
-
-    ref_count="$(grep -rn --include='*.dart' -E "\b${var_name}\b" lib/ 2>/dev/null \
-      | wc -l | tr -d ' ')"
-
-    [[ "$ref_count" -gt 1 ]] && return 0
-  done <<< "$all_matches"
+  # Phase (b): Variable reference fast-counting
+  # If we need to count variable occurrences, we also scan all dart lines once for variable names
+  for ref in $refs; do
+    local codeline="${_DART_LINE_CACHE["$ref"]}"
+    
+    # Is it a variable assignment?
+    if [[ "$codeline" =~ (const|final|var|String)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
+      local var_name="${BASH_REMATCH[2]}"
+      
+      # Quick check: How many times does this exact variable name appear across our cached code?
+      local count=0
+      for c in "${_DART_LINE_CACHE[@]}"; do
+        if [[ "$c" =~ \b"$var_name"\b ]]; then
+          count=$((count + 1))
+          if [[ $count -gt 1 ]]; then
+            return 0 # Used beyond declaration!
+          fi
+        fi
+      done
+    else
+      # Phase (a): Direct usage found on this line
+      return 0
+    fi
+  done
 
   return 1
 }
+
+# --- END OPTIMIZATION ENGINE ---
 
 # Print all asset file paths (one per line), excluding assets/translations/.
 _assets_list_files() {
@@ -85,7 +108,6 @@ _assets_count_files() {
 }
 
 # Write a \r-overwriting progress line to stderr (terminal only).
-# Args: $1 = current index, $2 = total, $3 = asset path being scanned
 _assets_progress() {
   [[ -t 2 ]] || return 0
   printf "\r  ${CYAN}->  ${RESET} [%d/%d] Checking %-55s" "$1" "$2" "$3" >&2
@@ -118,6 +140,9 @@ _assets_cmd_check() {
     log_error "No assets/ directory found. Run from the project root."
     exit 1
   fi
+
+  log_info "Indexing project files..."
+  _assets_preload_cache
 
   local unused_paths=()
   local unused_sizes=()
@@ -187,6 +212,9 @@ _assets_cmd_stats() {
     log_error "No assets/ directory found. Run from the project root."
     exit 1
   fi
+
+  log_info "Indexing project files..."
+  _assets_preload_cache
 
   local count_images=0 bytes_images=0 uc_images=0 ub_images=0
   local count_icons=0  bytes_icons=0  uc_icons=0  ub_icons=0
@@ -303,6 +331,9 @@ _assets_cmd_clean() {
     exit 1
   fi
 
+  log_info "Indexing project files..."
+  _assets_preload_cache
+
   local unused_paths=()
   local unused_sizes=()
   local _total_files _scan_idx
@@ -399,9 +430,6 @@ _assets_cmd_clean() {
   echo ""
 }
 
-# ==============================================================================
-#  flut assets — dispatcher
-# ==============================================================================
 _assets_usage() {
   echo ""
   echo -e "  ${BOLD}flut assets${RESET} — Detect and remove unused Flutter assets"
@@ -414,7 +442,11 @@ _assets_usage() {
   echo ""
 }
 
+# ==============================================================================
+#  flut assets — dispatcher (With embedded duration calculation)
+# ==============================================================================
 cmd_assets() {
+  local start_time=$SECONDS
   local subcmd="${1:-}"
   [[ $# -gt 0 ]] && shift || true
 
@@ -429,4 +461,9 @@ cmd_assets() {
       exit 1
       ;;
   esac
+
+  # Output total run duration at the very bottom
+  local duration=$((SECONDS - start_time))
+  echo -e "  ${CYAN}Execution time:${RESET} ${duration}s"
+  echo ""
 }
