@@ -21,12 +21,12 @@ _setup_assets() {
   mkdir -p lib
 }
 
-# Create a Dart file that references an asset path.
+# Create a Dart file that directly uses an asset (not a mere assignment).
 # $1 = dart file path (relative to sandbox), $2 = asset path to reference
 _dart_with_ref() {
   local dart_file="$1" asset_ref="$2"
   mkdir -p "$(dirname "$dart_file")"
-  printf "const assetPath = '%s';\n" "$asset_ref" > "$dart_file"
+  printf "Widget build() => Image.asset('%s');\n" "$asset_ref" > "$dart_file"
 }
 
 # Create an empty asset file.

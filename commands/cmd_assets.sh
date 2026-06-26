@@ -19,13 +19,55 @@ _assets_file_size() {
   wc -c < "$1" | tr -d ' '
 }
 
-# Return 0 if the asset is referenced anywhere in lib/**/*.dart, 1 otherwise.
-# Searches both the bare filename and the full relative path.
+# Return 0 if the asset is effectively used in lib/**/*.dart, 1 otherwise.
+#
+# Two-phase detection:
+#   (a) Direct usage  — the path/filename appears on a non-assignment line
+#       (e.g. Image.asset('assets/images/logo.png')).
+#   (b) Variable hold — the path only appears inside a string assignment
+#       (const x = 'assets/...').  We then extract the variable name and
+#       check if it is referenced on more than one line; if so it is consumed
+#       somewhere and the asset is considered used.  If the variable appears
+#       only on its own declaration line, the asset is unused.
 _assets_is_used() {
   local asset_path="$1"
   local bname
   bname="$(basename "$asset_path")"
-  grep -rqE "(${bname}|${asset_path})" --include='*.dart' lib/ 2>/dev/null
+
+  # All non-comment code lines in lib/ that mention the asset.
+  local all_matches
+  all_matches="$(grep -rn --include='*.dart' -E "(${bname}|${asset_path})" lib/ 2>/dev/null \
+    | grep -vE ":[[:space:]]*//")"
+
+  [[ -z "$all_matches" ]] && return 1
+
+  # Phase (a): any line that is NOT a string assignment → direct usage.
+  if printf '%s\n' "$all_matches" | grep -qvE "=\s*['\"]"; then
+    return 0
+  fi
+
+  # Phase (b): every occurrence is a string assignment.
+  # For each, extract the variable name and count its total references.
+  # ref_count > 1 means the variable is used beyond its own declaration.
+  while IFS= read -r match; do
+    [[ -z "$match" ]] && continue
+
+    local codeline var_name ref_count
+    codeline="$(printf '%s' "$match" | cut -d: -f3-)"
+    var_name="$(printf '%s' "$codeline" \
+      | grep -oE '[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*=' \
+      | tail -1 \
+      | sed 's/[[:space:]]*=$//')"
+
+    [[ -z "$var_name" ]] && continue
+
+    ref_count="$(grep -rn --include='*.dart' -E "\b${var_name}\b" lib/ 2>/dev/null \
+      | wc -l | tr -d ' ')"
+
+    [[ "$ref_count" -gt 1 ]] && return 0
+  done <<< "$all_matches"
+
+  return 1
 }
 
 # Print all asset file paths (one per line), excluding assets/translations/.
