@@ -146,8 +146,12 @@ cmd_doctor() {
     # Run flutter pub outdated and count upgradable packages
     local outdated_output
     outdated_output=$(flutter pub outdated 2>/dev/null) || true
+    # grep -c already prints a count (0 when nothing matches) and exits 1 in that
+    # case, so `|| true` is enough — `|| echo 0` would emit a second line and
+    # break the numeric comparison below.
     local upgradable
-    upgradable=$(echo "$outdated_output" | grep -cE '\*\s+[0-9]' 2>/dev/null || echo 0)
+    upgradable=$(echo "$outdated_output" | grep -cE '\*\s+[0-9]' 2>/dev/null || true)
+    [[ "$upgradable" =~ ^[0-9]+$ ]] || upgradable=0
 
     if [[ -n "$outdated_output" ]]; then
       if [[ "$upgradable" -gt 0 ]]; then
