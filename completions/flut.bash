@@ -13,6 +13,17 @@ _flut_list_features() {
   echo "${features[*]}"
 }
 
+_flut_list_architectures() {
+  local cli_dir archs=() d
+  cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  if [[ -n "$cli_dir" && -d "$cli_dir/architectures" ]]; then
+    for d in "$cli_dir/architectures"/*/; do
+      [[ -d "$d" ]] && archs+=("$(basename "$d")")
+    done
+  fi
+  echo "${archs[*]}"
+}
+
 _flut_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -24,13 +35,31 @@ _flut_complete() {
   COMPREPLY=()
 
   if [[ ${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "init feature upgrade check doctor generate assets clean --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "init feature architecture upgrade check doctor generate assets clean --help -h" -- "$cur"))
     return
   fi
 
   case "$cmd" in
     feature)
       COMPREPLY=($(compgen -W "--bloc --service" -- "$cur"))
+      ;;
+    init)
+      if [[ "$prev" == "--architecture" || "$prev" == "-a" ]]; then
+        local archs
+        archs=$(_flut_list_architectures)
+        COMPREPLY=($(compgen -W "$archs" -- "$cur"))
+      else
+        COMPREPLY=($(compgen -W "--architecture" -- "$cur"))
+      fi
+      ;;
+    architecture)
+      if [[ ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "list --set" -- "$cur"))
+      elif [[ "$prev" == "--set" || "$prev" == "-s" ]]; then
+        local archs
+        archs=$(_flut_list_architectures)
+        COMPREPLY=($(compgen -W "$archs" -- "$cur"))
+      fi
       ;;
     generate)
       if [[ ${COMP_CWORD} -eq 2 ]]; then

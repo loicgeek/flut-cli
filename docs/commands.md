@@ -7,6 +7,7 @@
 ## Table of Contents
 
 - [`flut init`](#flut-init)
+- [`flut architecture`](#flut-architecture)
 - [`flut feature`](#flut-feature-name---bloc---service)
 - [`flut generate`](#flut-generate-type-feature-name)
 - [`flut check`](#flut-check)
@@ -27,7 +28,16 @@ Bootstraps a full project scaffold inside the current Flutter project.
 
 ```
 flut init
+flut init --architecture <name>
+flut init -a <name>
+flut init --architecture=<name>
 ```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--architecture` / `-a` | No | Architecture profile to scaffold (default `ntech`). Writes the project's `flut.json`. |
 
 ### What it creates
 
@@ -79,7 +89,15 @@ assets/
 ```bash
 # From the root of an existing Flutter project
 flut init
+
+# Scaffold with a specific architecture profile
+flut init --architecture ntech
 ```
+
+### Notes
+
+- Every `flut init` writes a `flut.json` file with the chosen architecture.
+- Re-running `flut init` **without** `--architecture` keeps the architecture already recorded in `flut.json`.
 
 ### Next steps after `flut init`
 
@@ -87,6 +105,46 @@ flut init
 2. Run `flutter pub add --dev build_runner auto_route_generator`
 3. Run `dart run build_runner build --delete-conflicting-outputs`
 4. Set `easy_localization` up in `app.dart` (see printed checklist)
+
+---
+
+## `flut architecture`
+
+Manages the architecture profile of the current project. The active profile is stored in `flut.json` (created by `flut init`).
+
+### Synopsis
+
+```
+flut architecture
+flut architecture list
+flut architecture --set <name>
+```
+
+### Sub-commands
+
+| Argument | Description |
+|----------|-------------|
+| *(none)* / `list` | List installed architecture profiles and mark the current one. |
+| `--set <name>` / `-s <name>` | Set the project's architecture in `flut.json`. |
+
+### Examples
+
+```bash
+flut architecture
+# >> Architectures
+#   current: ntech
+#
+#     * ntech  Features-first: core, shared, features (default)
+
+flut architecture --set clean
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Unknown argument, unknown architecture, or missing value for `--set` |
 
 ---
 

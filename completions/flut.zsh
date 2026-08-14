@@ -25,6 +25,23 @@ _flut() {
   case $state in
     args)
       case ${words[1]} in
+        init)
+          _arguments \
+            '--architecture[Architecture profile to use]:architecture:_flut_architectures' \
+            '-a[Architecture profile to use]:architecture:_flut_architectures'
+          ;;
+        architecture)
+          _arguments -C \
+            '1: :_flut_arch_subcmds' \
+            '*:: :->arch_args'
+          case $state in
+            arch_args)
+              _arguments \
+                '--set[Set the project architecture]:architecture:_flut_architectures' \
+                '-s[Set the project architecture]:architecture:_flut_architectures'
+              ;;
+          esac
+          ;;
         feature)
           _arguments \
             '--bloc[Use Bloc instead of Cubit]' \
@@ -67,6 +84,7 @@ _flut_commands() {
   local commands=(
     'init:Initialize project scaffold'
     'feature:Generate a new feature module'
+    'architecture:List installed architectures or set the project one'
     'upgrade:Upgrade flut-cli to the latest version'
     'check:Audit project architecture'
     'doctor:Check project health'
@@ -74,6 +92,26 @@ _flut_commands() {
     'assets:Analyze and clean up unused Flutter assets'
   )
   _describe 'command' commands
+}
+
+_flut_arch_subcmds() {
+  local subcmds=(
+    'list:Show installed architectures and current'
+    '--set:Set the project architecture'
+  )
+  _describe 'subcommand' subcmds
+}
+
+_flut_architectures() {
+  local file dir archs=() d
+  file="${funcsourcetrace[1]%:*}"
+  dir="${file:h:h}/architectures"
+  for d in "$dir"/*/; do
+    [[ -d "$d" ]] && archs+=("${d:t}")
+  done
+  if [[ ${#archs[@]} -gt 0 ]]; then
+    _values 'architecture' "${archs[@]}"
+  fi
 }
 
 _flut_generate_types() {
