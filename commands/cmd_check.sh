@@ -6,6 +6,8 @@ cmd_check() {
   local warnings=0
   local errors=0
 
+  _manifest_env
+
   # ── helpers for internal check functions ────────────────────────────────────
   # Note: use $((var + 1)) instead of var=$((var + 1)) because with set -e,
   # errors=$((errors + 1)) exits the script when errors is 0 (returns old value 0 = falsy).
@@ -29,14 +31,9 @@ cmd_check() {
     local total_err=0
     for feat in "${features[@]}"; do
       local missing=()
-      [[ -d "lib/features/$feat/business_logic"       ]] || missing+=("business_logic")
-      [[ -d "lib/features/$feat/data"                 ]] || missing+=("data")
-      [[ -d "lib/features/$feat/data/models"          ]] || missing+=("data/models")
-      [[ -d "lib/features/$feat/data/repositories"    ]] || missing+=("data/repositories")
-      [[ -d "lib/features/$feat/presentation"         ]] || missing+=("presentation")
-      [[ -d "lib/features/$feat/presentation/screens" ]] || missing+=("presentation/screens")
-      [[ -d "lib/features/$feat/presentation/router"  ]] || missing+=("presentation/router")
-      [[ -d "lib/features/$feat/presentation/widgets" ]] || missing+=("presentation/widgets")
+      for d in "${FEATURE_DIRS[@]}"; do
+        [[ -d "lib/features/$feat/$d" ]] || missing+=("$d")
+      done
 
       if [[ ${#missing[@]} -gt 0 ]]; then
         _check_err "$feat — missing required dir(s): ${missing[*]}"
@@ -87,14 +84,12 @@ cmd_check() {
     fi
 
     local err=0
-    if grep -qE '^[[:space:]]*freezed[[:space:]]*$|freezed:' pubspec.yaml 2>/dev/null; then
-      _check_warn "Banned package 'freezed' found in pubspec.yaml"
-      err=$((err + 1))
-    fi
-    if grep -qE '^[[:space:]]*json_serializable[[:space:]]*$|json_serializable:' pubspec.yaml 2>/dev/null; then
-      _check_warn "Banned package 'json_serializable' found in pubspec.yaml"
-      err=$((err + 1))
-    fi
+    for pkg in "${BANNED_PACKAGES[@]}"; do
+      if grep -qE "^[[:space:]]*${pkg}[[:space:]]*$|${pkg}:" pubspec.yaml 2>/dev/null; then
+        _check_warn "Banned package '${pkg}' found in pubspec.yaml"
+        err=$((err + 1))
+      fi
+    done
 
     if [[ $err -eq 0 ]]; then
       _check_pass "No banned packages"

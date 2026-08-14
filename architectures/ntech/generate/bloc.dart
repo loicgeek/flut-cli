@@ -1,0 +1,35 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../../core/error/failures.dart';
+import '../data/repositories/{{name}}_repository.dart';
+import '{{name}}_event.dart';
+import '{{Feature}}_state.dart';
+
+class {{Pascal}}Bloc extends Bloc<{{Pascal}}Event, {{FeaturePascal}}State> {
+  {{Pascal}}Bloc(this._repository) : super(const {{FeaturePascal}}Initial()) {
+    on<{{Pascal}}Load>(_onLoad);
+    on<{{Pascal}}Refresh>(_onRefresh);
+  }
+
+  final {{Pascal}}Repository _repository;
+
+  Future<void> _onLoad({{Pascal}}Load event, Emitter<{{FeaturePascal}}State> emit) async {
+    emit(const {{FeaturePascal}}Loading());
+    try {
+      final items = await _repository.get{{Pascal}}List();
+      emit({{FeaturePascal}}Loaded(items));
+    } on AppFailure catch (f) {
+      emit({{FeaturePascal}}Error(f.userMessage));
+    }
+  }
+
+  Future<void> _onRefresh({{Pascal}}Refresh event, Emitter<{{FeaturePascal}}State> emit) async {
+    try {
+      final items = await _repository.get{{Pascal}}List();
+      emit({{FeaturePascal}}Loaded(items));
+    } on AppFailure catch (f) {
+      emit({{FeaturePascal}}Error(f.userMessage));
+    }
+  }
+}
+

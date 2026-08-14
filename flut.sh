@@ -64,6 +64,33 @@ mkf() {
   fi
 }
 
+# mkf_tpl <dest> <template-rel> [token=value ...]
+# Renders a template from architectures/<current>/<template-rel> into <dest>.
+# Tokens in the template are {{name}}/{{Pascal}}/{{pkg}}/... substituted literally.
+mkf_tpl() {
+  local dest="$1" rel="$2"; shift 2
+  local arch tpl content pair key val
+  arch="$(_arch_current)"
+  tpl="$FLUT_ARCH_DIR/$arch/$rel"
+  mkdir -p "$(dirname "$dest")"
+  if [[ -f "$dest" ]]; then
+    log_warning "exists - skipped: $dest"
+    return
+  fi
+  if [[ ! -f "$tpl" ]]; then
+    log_error "template not found: $tpl"
+    exit 1
+  fi
+  content="$(< "$tpl")"
+  for pair in "$@"; do
+    key="${pair%%=*}"
+    val="${pair#*=}"
+    content="${content//\{\{$key\}\}/$val}"
+  done
+  printf '%s\n' "$content" > "$dest"
+  log_success "$dest"
+}
+
 mkd() { mkdir -p "$1"; log_info "dir: $1"; }
 
 to_pascal() {
@@ -132,6 +159,25 @@ _arch_manifest() {
   fi
   if [[ -z "$ARCH_NAME" ]]; then
     ARCH_NAME="$1"
+  fi
+}
+
+# Load the active architecture's manifest (package lists, scaffold layout).
+# Populates RUNTIME_PACKAGES / DEV_PACKAGES / BANNED_PACKAGES / FEATURE_DIRS /
+# REQUIRED_DIRS / REQUIRED_FILES. Falls back to safe defaults when a profile
+# does not ship a manifest.sh.
+_manifest_env() {
+  RUNTIME_PACKAGES=()
+  DEV_PACKAGES=()
+  BANNED_PACKAGES=(freezed json_serializable)
+  FEATURE_DIRS=()
+  REQUIRED_DIRS=()
+  REQUIRED_FILES=()
+  local _arch
+  _arch="$(_arch_current)"
+  if [[ -f "$FLUT_ARCH_DIR/$_arch/manifest.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "$FLUT_ARCH_DIR/$_arch/manifest.sh"
   fi
 }
 

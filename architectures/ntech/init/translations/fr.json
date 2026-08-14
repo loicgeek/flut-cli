@@ -1,0 +1,21 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "retry": "Reessayer",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "close": "Fermer"
+  },
+  "errors": {
+    "no_internet": "Pas de connexion internet.",
+    "session_expired": "Session expiree. Reconnectez-vous.",
+    "unexpected": "Une erreur inattendue est survenue.",
+    "server": "Erreur serveur. Reessayez plus tard.",
+    "timeout": "La requete a expire. Reessayez.",
+    "not_found": "Ressource introuvable.",
+    "forbidden": "Acces refuse."
+  }
+}
+

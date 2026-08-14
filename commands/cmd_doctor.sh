@@ -10,6 +10,8 @@ cmd_doctor() {
   _doc_warn() { issues=$((issues + 1)); log_warning "$1"; }
   _doc_info() { log_info "$1"; }
 
+  _manifest_env
+
   log_section "Project Health"
   echo ""
 
@@ -48,24 +50,8 @@ cmd_doctor() {
       return
     fi
 
-    local required=(
-      "flutter_bloc"
-      "equatable"
-      "get_it"
-      "auto_route"
-      "dio"
-      "connectivity_plus"
-      "flutter_secure_storage"
-      "easy_localization"
-      "logger"
-      "intl"
-      "pretty_dio_logger"
-    )
-
-    local dev_required=(
-      "build_runner"
-      "auto_route_generator"
-    )
+    local required=("${RUNTIME_PACKAGES[@]}")
+    local dev_required=("${DEV_PACKAGES[@]}")
 
     local missing_count=0
     local found=0
@@ -123,49 +109,8 @@ cmd_doctor() {
 
   # ── Check 5: Scaffold integrity ────────────────────────────────────────────
   _check_scaffold_integrity() {
-    local required_dirs=(
-      "lib/core/config"
-      "lib/core/api/interceptors"
-      "lib/core/auth"
-      "lib/core/storage"
-      "lib/core/error"
-      "lib/core/bloc"
-      "lib/core/theme"
-      "lib/core/di"
-      "lib/core/router"
-      "lib/features"
-      "lib/shared/models"
-      "lib/shared/widgets"
-      "lib/shared/utils"
-      "assets/translations"
-    )
-
-    local required_files=(
-      "lib/main.dart"
-      "lib/main_dev.dart"
-      "lib/main_staging.dart"
-      "lib/main_prod.dart"
-      "lib/app.dart"
-      "lib/core/bootstrap.dart"
-      "lib/core/config/app_config.dart"
-      "lib/core/di/service_locator.dart"
-      "lib/core/router/app_router.dart"
-      "lib/core/api/api_client.dart"
-      "lib/core/api/api_endpoints.dart"
-      "lib/core/api/interceptors/auth_interceptor.dart"
-      "lib/core/api/interceptors/retry_interceptor.dart"
-      "lib/core/api/interceptors/connectivity_interceptor.dart"
-      "lib/core/storage/secure_storage.dart"
-      "lib/core/error/failures.dart"
-      "lib/core/error/exception_mapper.dart"
-      "lib/core/auth/auth_guard.dart"
-      "lib/core/bloc/app_bloc_observer.dart"
-      "lib/core/theme/app_theme.dart"
-      "lib/core/custom_transition_builders.dart"
-      "lib/shared/widgets/loading_shimmer.dart"
-      "lib/shared/widgets/empty_state.dart"
-      "lib/shared/widgets/error_state.dart"
-    )
+    local required_dirs=("${REQUIRED_DIRS[@]}")
+    local required_files=("${REQUIRED_FILES[@]}")
 
     local missing_dirs=0
     local missing_files=0
