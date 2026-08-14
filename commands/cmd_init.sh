@@ -201,6 +201,14 @@ cmd_init() {
   mkf_tpl ".idea/runConfigurations/Prod.xml" "init/idea/Prod.xml"
 
   # --------------------------------------------------------------------------
+  # Architecture-specific extras (profiles may add their own core files)
+  # --------------------------------------------------------------------------
+  _layout_env
+  if declare -f arch_init_extra &>/dev/null; then
+    arch_init_extra
+  fi
+
+  # --------------------------------------------------------------------------
   # flutter pub add
   # --------------------------------------------------------------------------
   log_section "Installing packages"

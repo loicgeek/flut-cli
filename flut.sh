@@ -65,20 +65,20 @@ mkf() {
 }
 
 # mkf_tpl <dest> <template-rel> [token=value ...]
-# Renders a template from architectures/<current>/<template-rel> into <dest>.
-# Tokens in the template are {{name}}/{{Pascal}}/{{pkg}}/... substituted literally.
+# Renders a template from the active architecture (or one of its parents, see
+# ARCH_EXTENDS) into <dest>. Tokens in the template are {{name}}/{{Pascal}}/
+# {{pkg}}/... and are substituted literally.
 mkf_tpl() {
   local dest="$1" rel="$2"; shift 2
   local arch tpl content pair key val
   arch="$(_arch_current)"
-  tpl="$FLUT_ARCH_DIR/$arch/$rel"
   mkdir -p "$(dirname "$dest")"
   if [[ -f "$dest" ]]; then
     log_warning "exists - skipped: $dest"
     return
   fi
-  if [[ ! -f "$tpl" ]]; then
-    log_error "template not found: $tpl"
+  if ! tpl="$(_arch_tpl_path "$arch" "$rel")"; then
+    log_error "template not found: $rel (architecture: $arch)"
     exit 1
   fi
   content="$(< "$tpl")"
@@ -162,22 +162,72 @@ _arch_manifest() {
   fi
 }
 
+# Print the profile an architecture inherits from (empty when standalone).
+# Read with sed rather than sourcing so it stays side-effect free.
+_arch_parent() {
+  local f="$FLUT_ARCH_DIR/$1/manifest.sh"
+  [[ -f "$f" ]] || return 0
+  sed -nE 's/^[[:space:]]*ARCH_EXTENDS=["]?([^"]*)["]?[[:space:]]*$/\1/p' "$f" | head -n 1
+}
+
+# Resolve a template through the inheritance chain: the active profile wins,
+# then its parents. Prints the path, returns 1 when nothing matches.
+_arch_tpl_path() {
+  local arch="$1" rel="$2" depth=0
+  while [[ -n "$arch" && $depth -lt 8 ]]; do
+    if [[ -f "$FLUT_ARCH_DIR/$arch/$rel" ]]; then
+      echo "$FLUT_ARCH_DIR/$arch/$rel"
+      return 0
+    fi
+    arch="$(_arch_parent "$arch")"
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
+# Source an architecture's manifest, parents first so children can override.
+_manifest_source() {
+  local arch="$1" depth="${2:-0}" parent
+  [[ -n "$arch" && $depth -lt 8 ]] || return 0
+  local f="$FLUT_ARCH_DIR/$arch/manifest.sh"
+  [[ -f "$f" ]] || return 0
+  parent="$(_arch_parent "$arch")"
+  if [[ -n "$parent" && "$parent" != "$arch" ]]; then
+    _manifest_source "$parent" $((depth + 1))
+  fi
+  # shellcheck source=/dev/null
+  source "$f"
+}
+
 # Load the active architecture's manifest (package lists, scaffold layout).
 # Populates RUNTIME_PACKAGES / DEV_PACKAGES / BANNED_PACKAGES / FEATURE_DIRS /
 # REQUIRED_DIRS / REQUIRED_FILES. Falls back to safe defaults when a profile
 # does not ship a manifest.sh.
 _manifest_env() {
+  ARCH_EXTENDS=""
   RUNTIME_PACKAGES=()
   DEV_PACKAGES=()
   BANNED_PACKAGES=(freezed json_serializable)
   FEATURE_DIRS=()
   REQUIRED_DIRS=()
   REQUIRED_FILES=()
-  local _arch
-  _arch="$(_arch_current)"
-  if [[ -f "$FLUT_ARCH_DIR/$_arch/manifest.sh" ]]; then
+  _manifest_source "$(_arch_current)"
+}
+
+# Load the active architecture's layout hooks (arch_feature_scaffold, ...).
+# Parents first so a child profile can override individual hooks.
+_layout_env() {
+  local arch parent
+  ARCH_GENERATE_TYPES=()
+  arch="$(_arch_current)"
+  parent="$(_arch_parent "$arch")"
+  if [[ -n "$parent" && "$parent" != "$arch" && -f "$FLUT_ARCH_DIR/$parent/layout.sh" ]]; then
     # shellcheck source=/dev/null
-    source "$FLUT_ARCH_DIR/$_arch/manifest.sh"
+    source "$FLUT_ARCH_DIR/$parent/layout.sh"
+  fi
+  if [[ -f "$FLUT_ARCH_DIR/$arch/layout.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "$FLUT_ARCH_DIR/$arch/layout.sh"
   fi
 }
 

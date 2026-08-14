@@ -1,5 +1,8 @@
 # ==============================================================================
 #  COMMAND: generate — Individual component generators
+#
+#  The supported types and the files they produce come from the active
+#  architecture (ARCH_GENERATE_TYPES + arch_generate_<type> in layout.sh).
 # ==============================================================================
 
 cmd_generate() {
@@ -12,16 +15,21 @@ cmd_generate() {
     name="$feature"
   fi
 
+  _manifest_env
+  _layout_env
+
+  local types="${ARCH_GENERATE_TYPES[*]:-}"
+  local types_pipe="${types// /|}"
+
   if [[ -z "$type" || -z "$feature" ]]; then
-    log_error "Usage: flut generate <model|screen|repository|cubit|bloc> <feature> [name]"
+    log_error "Usage: flut generate <${types_pipe}> <feature> [name]"
     echo ""
     echo "  Examples:"
-    echo "    flut generate model auth"
-    echo "    flut generate model auth login_request"
-    echo "    flut generate screen auth"
-    echo "    flut generate repository auth"
-    echo "    flut generate cubit auth"
-    echo "    flut generate bloc auth"
+    local t
+    for t in "${ARCH_GENERATE_TYPES[@]}"; do
+      echo "    flut generate $t auth"
+    done
+    echo "    flut generate ${ARCH_GENERATE_TYPES[0]} auth login_request   # custom component name"
     exit 1
   fi
 
@@ -55,110 +63,24 @@ cmd_generate() {
     [[ -n "$parsed" ]] && pkg_name="$parsed"
   fi
 
-  case "$type" in
-    model)
-      _gen_model
-      ;;
-    screen)
-      _gen_screen
-      ;;
-    repository)
-      _gen_repository
-      ;;
-    cubit)
-      _gen_cubit
-      ;;
-    bloc)
-      _gen_bloc
-      ;;
-    *)
-      log_error "Unknown type: $type"
-      echo "  Valid types: model, screen, repository, cubit, bloc"
-      exit 1
-      ;;
-  esac
-}
+  # Hook contract (see architectures/<arch>/layout.sh)
+  FLUT_FEATURE="$feature"
+  FLUT_FEATURE_PASCAL="$feature_pascal"
+  FLUT_NAME="$name"
+  FLUT_PASCAL="$pascal"
+  FLUT_BASE="$BASE"
+  FLUT_PKG="$pkg_name"
 
-# ── Generate: model ────────────────────────────────────────────────────────────
-_gen_model() {
-  mkf_tpl "$BASE/data/models/${name}_model.dart" "generate/model.dart" Pascal="$pascal"
-  echo ""
-  log_section "Next steps for ${feature}.${name}_model"
-  echo ""
-  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
-  echo "     // ${pascal}Model used by ${feature_pascal}Repository"
-  echo ""
-  echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     // Add API endpoint for ${name}s if needed"
-  echo ""
-}
+  local supported=false t
+  for t in "${ARCH_GENERATE_TYPES[@]}"; do
+    [[ "$t" == "$type" ]] && supported=true && break
+  done
 
-# ── Generate: screen ───────────────────────────────────────────────────────────
-_gen_screen() {
-  mkf_tpl "$BASE/presentation/screens/${name}_screen.dart" "generate/screen.dart" Feature="$feature" FeaturePascal="$feature_pascal" Pascal="$pascal" name="$name"
-  echo ""
-  log_section "Next steps for ${feature}.${name}_screen"
-  echo ""
-  echo -e "  ${YELLOW}1. lib/core/router/app_router.dart${RESET}"
-  echo "     AutoRoute(page: ${pascal}Route.page),"
-  echo ""
-  echo -e "  ${YELLOW}2. assets/translations/fr.json  &  en.json${RESET}"
-  echo "     \"${name}\": { \"title\": \"...\", \"empty\": \"...\" }"
-  echo ""
-}
-
-# ── Generate: repository ───────────────────────────────────────────────────────
-_gen_repository() {
-  mkf_tpl "$BASE/data/repositories/${name}_repository.dart" "generate/repository.dart" Pascal="$pascal" name="$name"
-  echo ""
-  log_section "Next steps for ${feature}.${name}_repository"
-  echo ""
-  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
-  echo "     sl.registerSingleton<${pascal}Repository>(${pascal}Repository(sl()));"
-  echo ""
-  echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     static const ${name}s = '/${name}s';"
-  echo ""
-}
-
-# ── Generate: cubit ────────────────────────────────────────────────────────────
-_gen_cubit() {
-  # Check if state file exists, create if not
-  local state_file="$BASE/business_logic/${feature}_state.dart"
-  if [[ ! -f "$state_file" ]]; then
-    mkf_tpl "$state_file" "generate/state.dart" Feature="$feature" FeaturePascal="$feature_pascal"
+  if [[ "$supported" != true ]] || ! declare -f "arch_generate_$type" &>/dev/null; then
+    log_error "Unknown type: $type"
+    echo "  Valid types: ${types// /, }"
+    exit 1
   fi
 
-  mkf_tpl "$BASE/business_logic/${name}_cubit.dart" "generate/cubit.dart" Feature="$feature" FeaturePascal="$feature_pascal" Pascal="$pascal" name="$name"
-  echo ""
-  log_section "Next steps for ${feature}.${name}_cubit"
-  echo ""
-  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
-  echo "     sl.registerFactory<${pascal}Cubit>(() => ${pascal}Cubit(sl()));"
-  echo ""
-  echo -e "  ${YELLOW}2. lib/core/router/app_router.dart${RESET}"
-  echo "     Add a route that provides ${pascal}Cubit"
-  echo ""
-}
-
-# ── Generate: bloc ─────────────────────────────────────────────────────────────
-_gen_bloc() {
-  # Check if state file exists, create if not
-  local state_file="$BASE/business_logic/${feature}_state.dart"
-  if [[ ! -f "$state_file" ]]; then
-    mkf_tpl "$state_file" "generate/state.dart" Feature="$feature" FeaturePascal="$feature_pascal"
-  fi
-
-  mkf_tpl "$BASE/business_logic/${name}_event.dart" "generate/event.dart" Pascal="$pascal"
-
-  mkf_tpl "$BASE/business_logic/${name}_bloc.dart" "generate/bloc.dart" Feature="$feature" FeaturePascal="$feature_pascal" Pascal="$pascal" name="$name"
-  echo ""
-  log_section "Next steps for ${feature}.${name}_bloc"
-  echo ""
-  echo -e "  ${YELLOW}1. lib/core/di/service_locator.dart${RESET}"
-  echo "     sl.registerFactory<${pascal}Bloc>(() => ${pascal}Bloc(sl()));"
-  echo ""
-  echo -e "  ${YELLOW}2. lib/core/router/app_router.dart${RESET}"
-  echo "     Add a route that provides ${pascal}Bloc"
-  echo ""
+  "arch_generate_$type"
 }
