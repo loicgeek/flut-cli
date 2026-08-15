@@ -163,4 +163,20 @@ _flut_asset_subcmds() {
   _describe 'subcommand' subcmds
 }
 
-compdef _flut flut
+# `compdef` only exists once compinit has run. Sourcing this file before that
+# (or in a non-interactive shell) should not error, so register lazily.
+if (( $+functions[compdef] )); then
+  compdef _flut flut
+else
+  # compinit has not run yet — register as soon as it does.
+  autoload -Uz add-zsh-hook 2>/dev/null
+  _flut_register_completion() {
+    if (( $+functions[compdef] )); then
+      compdef _flut flut
+      add-zsh-hook -d precmd _flut_register_completion 2>/dev/null
+    fi
+  }
+  if (( $+functions[add-zsh-hook] )); then
+    add-zsh-hook precmd _flut_register_completion
+  fi
+fi
