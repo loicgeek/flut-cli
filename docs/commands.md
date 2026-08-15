@@ -127,6 +127,20 @@ flut architecture --set <name>
 | *(none)* / `list` | List installed architecture profiles and mark the current one. |
 | `--set <name>` / `-s <name>` | Set the project's architecture in `flut.json`. |
 
+### Installed profiles
+
+| Profile | Feature slice layout | Extra `generate` types |
+|---------|----------------------|------------------------|
+| `ntech` *(default)* | `business_logic/`, `data/{models,repositories,services}`, `presentation/{screens,router,widgets}` | — |
+| `clean` | `domain/{entities,repositories,usecases}`, `data/{models,datasources,repositories}`, `presentation/{bloc,screens,router,widgets}` | `entity`, `usecase`, `datasource` |
+
+`clean` builds on the same core scaffold as `ntech` (API client, DI, router,
+theme, storage, error handling) and adds `lib/core/usecase/usecase.dart`, the
+base contract every use case implements. Dependencies point inwards only:
+`presentation -> domain <- data`, so the domain layer stays free of Dio and
+JSON. In `clean`, `--service` is ignored because `data/datasources/` already
+isolates data access.
+
 ### Examples
 
 ```bash
@@ -134,6 +148,7 @@ flut architecture
 # >> Architectures
 #   current: ntech
 #
+#       clean  Clean Architecture: domain, data, presentation per feature
 #     * ntech  Features-first: core, shared, features (default)
 
 flut architecture --set clean

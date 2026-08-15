@@ -24,6 +24,21 @@ _flut_list_architectures() {
   echo "${archs[*]}"
 }
 
+# Generate types depend on the architecture the current project uses
+_flut_list_generate_types() {
+  local cli_dir arch="ntech" layout types
+  if [[ -f "flut.json" ]]; then
+    arch="$(sed -nE 's/.*"architecture"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' flut.json | head -n 1)"
+    [[ -n "$arch" ]] || arch="ntech"
+  fi
+  cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  layout="$cli_dir/architectures/$arch/layout.sh"
+  if [[ -f "$layout" ]]; then
+    types="$(sed -nE 's/^ARCH_GENERATE_TYPES=\((.*)\)/\1/p' "$layout" | head -n 1)"
+  fi
+  echo "${types:-model screen repository cubit bloc}"
+}
+
 _flut_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -63,7 +78,7 @@ _flut_complete() {
       ;;
     generate)
       if [[ ${COMP_CWORD} -eq 2 ]]; then
-        COMPREPLY=($(compgen -W "model screen repository cubit bloc" -- "$cur"))
+        COMPREPLY=($(compgen -W "$(_flut_list_generate_types)" -- "$cur"))
       elif [[ "$prev" == "--feature" || "$prev" == "-f" ]]; then
         local features
         features=$(_flut_list_features)

@@ -115,13 +115,34 @@ _flut_architectures() {
 }
 
 _flut_generate_types() {
-  local types=(
-    'model:Data model with fromJson/toJson/copyWith'
-    'screen:Presentation screen widget'
-    'repository:Repository with Dio error handling'
-    'cubit:Cubit state manager'
-    'bloc:Bloc with event class'
+  local -A descriptions=(
+    model      'Data model with fromJson/toJson'
+    screen     'Presentation screen widget'
+    repository 'Repository with Dio error handling'
+    cubit      'Cubit state manager'
+    bloc       'Bloc with event class'
+    entity     'Domain entity (pure Dart)'
+    usecase    'Use case built on a repository interface'
+    datasource 'Remote data source for the data layer'
   )
+
+  # The available types come from the architecture the project uses
+  local file dir arch=ntech layout raw t
+  file="${funcsourcetrace[1]%:*}"
+  dir="${file:h:h}"
+  if [[ -f flut.json ]]; then
+    arch="${$(sed -nE 's/.*"architecture"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' flut.json):-ntech}"
+  fi
+  layout="$dir/architectures/$arch/layout.sh"
+  if [[ -f "$layout" ]]; then
+    raw="$(sed -nE 's/^ARCH_GENERATE_TYPES=\((.*)\)/\1/p' "$layout" | head -n 1)"
+  fi
+  [[ -n "$raw" ]] || raw='model screen repository cubit bloc'
+
+  local types=()
+  for t in ${=raw}; do
+    types+=("${t}:${descriptions[$t]:-Generate a ${t}}")
+  done
   _describe 'type' types
 }
 

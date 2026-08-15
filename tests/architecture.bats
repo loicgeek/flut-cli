@@ -72,7 +72,7 @@ teardown() {
 }
 
 @test "flut init with unknown architecture exits with error" {
-  run bash "$FLUT_SCRIPT" init --architecture clean
+  run bash "$FLUT_SCRIPT" init --architecture bogus
   [ "$status" -eq 1 ]
   [[ "$output" == *"Unknown architecture"* ]]
   assert_file_not_exists "flut.json"
