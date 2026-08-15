@@ -119,6 +119,30 @@ mkf_tpl() {
 
 mkd() { mkdir -p "$1"; log_info "dir: $1"; }
 
+# Register a feature's REST collection in core/api/api_endpoints.dart.
+# The repository/data source templates reference ApiEndpoints.<name>s, so
+# without this the generated feature does not compile until the user adds it
+# by hand. Idempotent, and a no-op if the file or its anchor is missing.
+add_api_endpoint() {
+  local name="$1"
+  local file="lib/core/api/api_endpoints.dart"
+  local anchor="  // Add endpoints by domain below"
+
+  [[ -f "$file" ]] || return 0
+  if grep -qE "^[[:space:]]*static const ${name}s[[:space:]]*=" "$file"; then
+    return 0
+  fi
+  grep -qF "$anchor" "$file" || return 0
+
+  local entry="  static const ${name}s = '/${name}s';"
+  local tmp="${file}.flut.tmp"
+  awk -v anchor="$anchor" -v entry="$entry" '
+    { print }
+    index($0, anchor) && !done { print entry; done = 1 }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+  log_success "$file  (+ ${name}s)"
+}
+
 to_pascal() {
   echo "$1" | awk -F'_' '{
     result=""

@@ -1,12 +1,12 @@
 /// Base contract for every use case in the domain layer.
 ///
-/// [Type] is what the use case returns, [Params] what it needs to run. Use
+/// [R] is what the use case returns, [Params] what it needs to run. Use
 /// [NoParams] for use cases that take no arguments.
 ///
 /// Failures are signalled by throwing an AppFailure (see core/error), so call
 /// sites can `try/catch` in one place instead of unwrapping a result type.
-abstract interface class UseCase<Type, Params> {
-  Future<Type> call(Params params);
+abstract interface class UseCase<R, Params> {
+  Future<R> call(Params params);
 }
 
 /// Marker for use cases that take no arguments.

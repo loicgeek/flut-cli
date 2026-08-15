@@ -141,3 +141,64 @@ teardown() {
   [[ "$output" == *"Next steps"* ]]
   [[ "$output" == *"app_router"* ]]
 }
+
+# ── Generated code must reference only things that exist ─────────────────────
+
+@test "generate cubit creates the repository it imports" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate cubit product listing
+  [ "$status" -eq 0 ]
+  assert_file_exists "lib/features/product/data/repositories/listing_repository.dart"
+  assert_file_exists "lib/features/product/data/models/listing_model.dart"
+}
+
+@test "generate bloc creates the repository it imports" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate bloc product actions
+  [ "$status" -eq 0 ]
+  assert_file_exists "lib/features/product/data/repositories/actions_repository.dart"
+}
+
+@test "generate screen binds to the feature's bloc when it uses one" {
+  bash "$FLUT_SCRIPT" feature order --bloc >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate screen order summary
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/order/presentation/screens/summary_screen.dart" "order_bloc.dart"
+  assert_file_not_contains "lib/features/order/presentation/screens/summary_screen.dart" "order_cubit.dart"
+}
+
+@test "generate screen binds to the feature's cubit by default" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate screen product detail
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/product/presentation/screens/detail_screen.dart" "product_cubit.dart"
+}
+
+# ── api_endpoints registration ───────────────────────────────────────────────
+
+@test "feature registers its endpoint in api_endpoints.dart" {
+  mkdir -p "$SANDBOX_DIR/lib/core/api"
+  printf 'abstract final class ApiEndpoints {\n  // Add endpoints by domain below\n}\n' \
+    > "$SANDBOX_DIR/lib/core/api/api_endpoints.dart"
+
+  run bash "$FLUT_SCRIPT" feature product
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/core/api/api_endpoints.dart" "static const products = '/products';"
+}
+
+@test "endpoint registration is idempotent" {
+  mkdir -p "$SANDBOX_DIR/lib/core/api"
+  printf 'abstract final class ApiEndpoints {\n  // Add endpoints by domain below\n}\n' \
+    > "$SANDBOX_DIR/lib/core/api/api_endpoints.dart"
+
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  bash "$FLUT_SCRIPT" generate repository product product >/dev/null 2>&1
+  run grep -c "static const products" "$SANDBOX_DIR/lib/core/api/api_endpoints.dart"
+  [ "$output" -eq 1 ]
+}
+
+@test "feature works when api_endpoints.dart is absent" {
+  run bash "$FLUT_SCRIPT" feature product
+  [ "$status" -eq 0 ]
+  assert_file_exists "lib/features/product/data/repositories/product_repository.dart"
+}

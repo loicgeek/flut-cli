@@ -6,6 +6,9 @@ import '../../domain/usecases/{{name}}_usecase.dart';
 import '{{name}}_event.dart';
 import '{{name}}_state.dart';
 
+// Re-exported so a screen importing the bloc also sees its events.
+export '{{name}}_event.dart';
+
 /// Presentation depends on the use case, not on the repository or Dio.
 class {{Pascal}}Bloc extends Bloc<{{Pascal}}Event, {{Pascal}}State> {
   {{Pascal}}Bloc(this._useCase) : super(const {{Pascal}}Initial()) {

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
-import '../bloc/{{Feature}}_cubit.dart';
+import '../bloc/{{blImport}}';
 import '../bloc/{{Feature}}_state.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/error_state.dart';
@@ -17,7 +17,7 @@ class {{Pascal}}Screen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => sl<{{FeaturePascal}}Cubit>()..load(),
+      {{blProvide}},
       child: const _{{Pascal}}View(),
     );
   }
@@ -30,7 +30,7 @@ class _{{Pascal}}View extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('{{name}}.title'.tr())),
-      body: BlocConsumer<{{FeaturePascal}}Cubit, {{FeaturePascal}}State>(
+      body: BlocConsumer<{{blType}}, {{FeaturePascal}}State>(
         listener: (context, state) {
           if (state is {{FeaturePascal}}Error) {
             ScaffoldMessenger.of(context)
@@ -41,11 +41,11 @@ class _{{Pascal}}View extends StatelessWidget {
           {{FeaturePascal}}Initial() => const SizedBox.shrink(),
           {{FeaturePascal}}Loading() => const Center(child: LoadingShimmer()),
           {{FeaturePascal}}Error()   => ErrorState(
-              message: (state as {{FeaturePascal}}Error).message,
-              onRetry: () => context.read<{{FeaturePascal}}Cubit>().load(),
+              message: state.message,
+              onRetry: () => {{blRetry}},
             ),
           {{FeaturePascal}}Loaded()  => _{{Pascal}}List(
-              items: (state as {{FeaturePascal}}Loaded).items,
+              items: state.items,
             ),
         },
       ),

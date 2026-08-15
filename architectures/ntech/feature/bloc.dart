@@ -5,6 +5,9 @@ import '../data/repositories/{{name}}_repository.dart';
 import '{{name}}_event.dart';
 import '{{name}}_state.dart';
 
+// Re-exported so a screen importing the bloc also sees its events.
+export '{{name}}_event.dart';
+
 class {{Pascal}}Bloc extends Bloc<{{Pascal}}Event, {{Pascal}}State> {
   {{Pascal}}Bloc(this._repository) : super(const {{Pascal}}Initial()) {
     on<{{Pascal}}Load>(_onLoad);

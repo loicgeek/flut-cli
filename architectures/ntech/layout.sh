@@ -26,6 +26,8 @@ ARCH_GENERATE_TYPES=(model screen repository cubit bloc)
 arch_feature_scaffold() {
   local name="$FLUT_NAME" pascal="$FLUT_PASCAL" BASE="$FLUT_BASE"
 
+  add_api_endpoint "$name"
+
   mkd "$BASE/business_logic"
   mkd "$BASE/data/models"
   mkd "$BASE/data/repositories"
@@ -105,7 +107,7 @@ arch_feature_checklist() {
 
   echo ""
   echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     static const ${name}s = '/${name}s';"
+  echo "     registered: static const ${name}s = '/${name}s';  (adjust if the API differs)"
 
   echo ""
   echo -e "  ${YELLOW}3. lib/core/router/app_router.dart${RESET}"
@@ -125,6 +127,37 @@ arch_feature_checklist() {
 }
 
 # ── generate ─────────────────────────────────────────────────────────────────
+# A generated component must compile, so create what it imports when missing.
+
+_ntech_ensure_model() {
+  local f="$FLUT_BASE/data/models/${FLUT_NAME}_model.dart"
+  [[ -f "$f" ]] || mkf_tpl "$f" "generate/model.dart" Pascal="$FLUT_PASCAL"
+}
+
+_ntech_ensure_repository() {
+  _ntech_ensure_model
+  local f="$FLUT_BASE/data/repositories/${FLUT_NAME}_repository.dart"
+  if [[ ! -f "$f" ]]; then
+    add_api_endpoint "$FLUT_NAME"
+    mkf_tpl "$f" "generate/repository.dart" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
+  fi
+}
+
+# Bind a generated screen to the state manager the feature actually uses
+_ntech_feature_bl_vars() {
+  if [[ -f "$FLUT_BASE/business_logic/${FLUT_FEATURE}_bloc.dart" ]]; then
+    bl_type="${FLUT_FEATURE_PASCAL}Bloc"
+    bl_import="${FLUT_FEATURE}_bloc.dart"
+    bl_provide="create: (_) => sl<${FLUT_FEATURE_PASCAL}Bloc>()..add(const ${FLUT_FEATURE_PASCAL}Load())"
+    bl_retry="context.read<${FLUT_FEATURE_PASCAL}Bloc>().add(const ${FLUT_FEATURE_PASCAL}Refresh())"
+  else
+    bl_type="${FLUT_FEATURE_PASCAL}Cubit"
+    bl_import="${FLUT_FEATURE}_cubit.dart"
+    bl_provide="create: (_) => sl<${FLUT_FEATURE_PASCAL}Cubit>()..load()"
+    bl_retry="context.read<${FLUT_FEATURE_PASCAL}Cubit>().load()"
+  fi
+}
+
 arch_generate_model() {
   mkf_tpl "$FLUT_BASE/data/models/${FLUT_NAME}_model.dart" "generate/model.dart" Pascal="$FLUT_PASCAL"
   echo ""
@@ -139,7 +172,9 @@ arch_generate_model() {
 }
 
 arch_generate_screen() {
-  mkf_tpl "$FLUT_BASE/presentation/screens/${FLUT_NAME}_screen.dart" "generate/screen.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
+  local bl_type bl_provide bl_import bl_retry
+  _ntech_feature_bl_vars
+  mkf_tpl "$FLUT_BASE/presentation/screens/${FLUT_NAME}_screen.dart" "generate/screen.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" blImport="$bl_import" blProvide="$bl_provide" blRetry="$bl_retry" blType="$bl_type" name="$FLUT_NAME"
   echo ""
   log_section "Next steps for ${FLUT_FEATURE}.${FLUT_NAME}_screen"
   echo ""
@@ -152,6 +187,7 @@ arch_generate_screen() {
 }
 
 arch_generate_repository() {
+  add_api_endpoint "$FLUT_NAME"
   mkf_tpl "$FLUT_BASE/data/repositories/${FLUT_NAME}_repository.dart" "generate/repository.dart" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
   echo ""
   log_section "Next steps for ${FLUT_FEATURE}.${FLUT_NAME}_repository"
@@ -160,11 +196,12 @@ arch_generate_repository() {
   echo "     sl.registerSingleton<${FLUT_PASCAL}Repository>(${FLUT_PASCAL}Repository(sl()));"
   echo ""
   echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     static const ${FLUT_NAME}s = '/${FLUT_NAME}s';"
+  echo "     registered: static const ${FLUT_NAME}s = '/${FLUT_NAME}s';  (adjust if the API differs)"
   echo ""
 }
 
 arch_generate_cubit() {
+  _ntech_ensure_repository
   local state_file="$FLUT_BASE/business_logic/${FLUT_FEATURE}_state.dart"
   if [[ ! -f "$state_file" ]]; then
     mkf_tpl "$state_file" "generate/state.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL"
@@ -183,6 +220,7 @@ arch_generate_cubit() {
 }
 
 arch_generate_bloc() {
+  _ntech_ensure_repository
   local state_file="$FLUT_BASE/business_logic/${FLUT_FEATURE}_state.dart"
   if [[ ! -f "$state_file" ]]; then
     mkf_tpl "$state_file" "generate/state.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL"

@@ -19,11 +19,9 @@ Future<void> setupServiceLocator(AppConfig config) async {
   sl.registerSingleton<AppConfig>(config);
 
   // ── Core ───────────────────────────────────────────────────────────────────
-  sl.registerSingleton<FlutterSecureStorage>(
-    const FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    ),
-  );
+  // Defaults are already AES-GCM encrypted on Android; the old
+  // `encryptedSharedPreferences` flag was removed in flutter_secure_storage 11.
+  sl.registerSingleton<FlutterSecureStorage>(const FlutterSecureStorage());
   sl.registerSingleton<SecureStorage>(SecureStorage(sl()));
   sl.registerSingleton<Connectivity>(Connectivity());
 

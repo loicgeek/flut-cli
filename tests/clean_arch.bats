@@ -323,3 +323,28 @@ use_ntech() {
   run bash "$FLUT_SCRIPT" doctor
   [[ "$clean_out" != "$output" ]]
 }
+
+# ── Generated clean code must reference only things that exist ───────────────
+
+@test "clean generate screen binds to the feature's bloc when it uses one" {
+  bash "$FLUT_SCRIPT" feature order --bloc >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate screen order summary
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/order/presentation/screens/summary_screen.dart" "order_bloc.dart"
+  assert_file_not_contains "lib/features/order/presentation/screens/summary_screen.dart" "order_cubit.dart"
+}
+
+@test "clean bloc re-exports its events so screens can use them" {
+  bash "$FLUT_SCRIPT" feature order --bloc >/dev/null 2>&1
+  assert_file_contains "lib/features/order/presentation/bloc/order_bloc.dart" "export 'order_event.dart';"
+}
+
+@test "clean feature registers its endpoint" {
+  mkdir -p "$SANDBOX_DIR/lib/core/api"
+  printf 'abstract final class ApiEndpoints {\n  // Add endpoints by domain below\n}\n' \
+    > "$SANDBOX_DIR/lib/core/api/api_endpoints.dart"
+
+  run bash "$FLUT_SCRIPT" feature product
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/core/api/api_endpoints.dart" "static const products = '/products';"
+}

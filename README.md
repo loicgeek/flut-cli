@@ -244,7 +244,7 @@ Dependencies point inwards only — `presentation -> domain <- data` — and
 **After generation, follow the printed checklist:**
 
 1. Register in `lib/core/di/service_locator.dart` (repo → service if used → Cubit/Bloc)
-2. Add endpoint in `lib/core/api/api_endpoints.dart`
+2. Endpoint `static const <name>s` is added to `lib/core/api/api_endpoints.dart` automatically — adjust the path if it differs
 3. Add route in `lib/core/router/app_router.dart`
 4. Add translation keys in `assets/translations/fr.json` & `en.json`
 5. Wire `<Name>RouterModule` into the root router if using sub-navigation

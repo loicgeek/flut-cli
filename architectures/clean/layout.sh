@@ -80,6 +80,8 @@ _clean_bl_vars() {
 arch_feature_scaffold() {
   local name="$FLUT_NAME" pascal="$FLUT_PASCAL" BASE="$FLUT_BASE"
 
+  add_api_endpoint "$name"
+
   if [[ "$FLUT_USE_SERVICE" == true ]]; then
     log_warning "--service has no effect in clean — data/datasources/ already isolates data access."
   fi
@@ -139,7 +141,7 @@ arch_feature_checklist() {
 
   echo ""
   echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     static const ${name}s = '/${name}s';"
+  echo "     registered: static const ${name}s = '/${name}s';  (adjust if the API differs)"
 
   echo ""
   echo -e "  ${YELLOW}3. lib/core/router/app_router.dart${RESET}"
@@ -199,6 +201,7 @@ arch_generate_model() {
 }
 
 arch_generate_datasource() {
+  add_api_endpoint "$FLUT_NAME"
   _clean_ensure_datasource
   echo ""
   log_section "Next steps for ${FLUT_FEATURE}.${FLUT_NAME}_remote_datasource"
@@ -207,11 +210,12 @@ arch_generate_datasource() {
   echo "     sl.registerSingleton<${FLUT_PASCAL}RemoteDataSource>(${FLUT_PASCAL}RemoteDataSourceImpl(sl()));"
   echo ""
   echo -e "  ${YELLOW}2. lib/core/api/api_endpoints.dart${RESET}"
-  echo "     static const ${FLUT_NAME}s = '/${FLUT_NAME}s';"
+  echo "     registered: static const ${FLUT_NAME}s = '/${FLUT_NAME}s';  (adjust if the API differs)"
   echo ""
 }
 
 arch_generate_repository() {
+  add_api_endpoint "$FLUT_NAME"
   _clean_ensure_datasource
   _clean_ensure_repository_interface
   mkf_tpl "$FLUT_BASE/data/repositories/${FLUT_NAME}_repository_impl.dart" "feature/repository_impl.dart" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
@@ -226,8 +230,25 @@ arch_generate_repository() {
   echo ""
 }
 
+# Bind a generated screen to the state manager the feature actually uses
+_clean_feature_bl_vars() {
+  if [[ -f "$FLUT_BASE/presentation/bloc/${FLUT_FEATURE}_bloc.dart" ]]; then
+    bl_type="${FLUT_FEATURE_PASCAL}Bloc"
+    bl_import="${FLUT_FEATURE}_bloc.dart"
+    bl_provide="create: (_) => sl<${FLUT_FEATURE_PASCAL}Bloc>()..add(const ${FLUT_FEATURE_PASCAL}Load())"
+    bl_retry="context.read<${FLUT_FEATURE_PASCAL}Bloc>().add(const ${FLUT_FEATURE_PASCAL}Refresh())"
+  else
+    bl_type="${FLUT_FEATURE_PASCAL}Cubit"
+    bl_import="${FLUT_FEATURE}_cubit.dart"
+    bl_provide="create: (_) => sl<${FLUT_FEATURE_PASCAL}Cubit>()..load()"
+    bl_retry="context.read<${FLUT_FEATURE_PASCAL}Cubit>().load()"
+  fi
+}
+
 arch_generate_screen() {
-  mkf_tpl "$FLUT_BASE/presentation/screens/${FLUT_NAME}_screen.dart" "generate/screen.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
+  local bl_type bl_provide bl_import bl_retry
+  _clean_feature_bl_vars
+  mkf_tpl "$FLUT_BASE/presentation/screens/${FLUT_NAME}_screen.dart" "generate/screen.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" blImport="$bl_import" blProvide="$bl_provide" blRetry="$bl_retry" blType="$bl_type" name="$FLUT_NAME"
   echo ""
   log_section "Next steps for ${FLUT_FEATURE}.${FLUT_NAME}_screen"
   echo ""

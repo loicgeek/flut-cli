@@ -224,7 +224,7 @@ flut feature checkout --bloc --service   # Bloc + service layer
    sl.registerSingleton<AuthRepository>(AuthRepository(sl<Dio>()));
    sl.registerFactory<AuthCubit>(() => AuthCubit(sl<AuthRepository>()));
    ```
-2. Add your endpoint in `lib/core/api/api_endpoints.dart`.
+2. The endpoint `static const <name>s` is registered in `lib/core/api/api_endpoints.dart` for you — adjust the path if the API differs.
 3. Add the route in `lib/core/router/app_router.dart`.
 4. Add translation keys in `assets/translations/en.json` and `fr.json`.
 5. Run `dart run build_runner build --delete-conflicting-outputs`.

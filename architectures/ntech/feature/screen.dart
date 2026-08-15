@@ -41,11 +41,11 @@ class _{{Pascal}}View extends StatelessWidget {
           {{Pascal}}Initial() => const SizedBox.shrink(),
           {{Pascal}}Loading() => const Center(child: LoadingShimmer()),
           {{Pascal}}Error()   => ErrorState(
-              message: (state as {{Pascal}}Error).message,
+              message: state.message,
               onRetry: () => {{blRetry}},
             ),
           {{Pascal}}Loaded()  => _{{Pascal}}List(
-              items: (state as {{Pascal}}Loaded).items,
+              items: state.items,
             ),
         },
       ),
