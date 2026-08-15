@@ -451,6 +451,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, code style, and te
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
+
+---
+
 ## License
 
 MIT © NTECH-SERVICES SARL

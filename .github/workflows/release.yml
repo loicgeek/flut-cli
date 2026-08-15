@@ -7,9 +7,12 @@
 #    2. Create a GitHub Release with auto-generated release notes
 #
 #  How to release a new version:
-#    1. Update the VERSION file:   echo "0.2.0" > VERSION
-#    2. Commit:                    git add VERSION && git commit -m "chore: bump version to 0.2.0"
-#    3. Tag and push:              git tag v0.2.0 && git push origin main --tags
+#    1. Update the VERSION file:   echo "0.4.0" > VERSION
+#    2. Record the changes in CHANGELOG.md under a new heading
+#    3. Commit:                    git add VERSION CHANGELOG.md && git commit -m "chore: bump version to 0.4.0"
+#    4. Tag and push:              git tag v0.4.0 && git push origin main --tags
+#
+#  The tag must match the VERSION file; the workflow verifies this.
 # =============================================================================
 
 name: Release
@@ -37,7 +40,7 @@ jobs:
           sudo apt-get install -y shellcheck bats
 
       - name: Lint shell scripts
-        run: shellcheck --shell=bash flut.sh install.sh
+        run: shellcheck --shell=bash flut.sh install.sh commands/*.sh architectures/*/*.sh
 
       - name: Run BATS tests
         run: bats --print-output-on-failure tests/
