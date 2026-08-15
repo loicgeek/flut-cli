@@ -15,6 +15,10 @@ DEV_PACKAGES=(build_runner auto_route_generator)
 # Package names flagged by `flut check`
 BANNED_PACKAGES=(freezed json_serializable)
 
+# Classes the scaffold registers in GetIt that come from packages rather than
+# from lib/, so `flut check` does not report them as missing
+DI_EXTERNAL_CLASSES=(Dio Connectivity FlutterSecureStorage)
+
 # Required dirs inside each feature (checked by `flut check`)
 FEATURE_DIRS=(business_logic data data/models data/repositories presentation presentation/screens presentation/router presentation/widgets)
 

@@ -322,15 +322,36 @@ flut check
 
 | # | Check | Severity | What it looks for |
 |---|-------|----------|-------------------|
-| 1 | Feature structure | Error | Each feature under `lib/features/` must have all required directories |
-| 2 | Sealed states | Error | Every `*_state.dart` must declare a `sealed class` |
+| 1 | Feature structure | Error | Each feature under `lib/features/` must have the directories its architecture requires |
+| 2 | Sealed states | Error | Every `*_state.dart` **under `lib/features/`** must declare a `sealed class` |
 | 3 | Banned packages | Warning | `freezed` or `json_serializable` in `pubspec.yaml` |
 | 4 | Layer boundaries | Error | No file in `presentation/` may import a path containing `data/` |
 | 5 | Router registration | Warning | Every screen in `presentation/screens/` should be referenced in `app_router.dart` |
-| 6 | DI registration | Warning | Every class in `service_locator.dart` must have a matching file |
+| 6 | DI registration | Warning | Every class registered in `service_locator.dart` must be declared somewhere in `lib/` |
 | 7 | Translation keys | Warning | Every `tr('key')` call must exist in both `en.json` and `fr.json` |
 | 8 | Orphaned generated files | Warning | Every `*.gr.dart` must have a corresponding source file |
 | 9 | Cubit/Bloc convention | Error | Cubits/Blocs must catch `AppFailure`, not generic `Exception` |
+
+Check 1 reads its required directories from the active architecture, so a
+`clean` project is audited against `domain/`, `data/` and `presentation/`
+rather than ntech's layout. Check 2 only considers state files under
+`lib/features/`, so presentation widgets such as `shared/widgets/empty_state.dart`
+are not mistaken for bloc states. Check 6 matches the class *declaration*
+rather than a filename, ignores commented-out registrations, and skips classes
+the architecture registers from packages (`Dio`, `Connectivity`,
+`FlutterSecureStorage` for ntech).
+
+### Additional checks for `clean`
+
+The Clean Architecture profile adds four rules that enforce its dependency
+rule — `presentation -> domain <- data`:
+
+| Check | Severity | What it looks for |
+|-------|----------|-------------------|
+| Domain entities are pure | Error | No entity may import `package:flutter` or `package:dio`, or handle JSON |
+| Domain layer isolated | Error | Nothing under `domain/` may import the data layer |
+| Use cases depend on interfaces | Error | A use case may not reference `*RepositoryImpl` |
+| Repository contracts | Warning | Each `*_repository_impl.dart` should `implements <Name>Repository` |
 
 ### Exit codes
 

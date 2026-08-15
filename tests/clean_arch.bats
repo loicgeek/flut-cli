@@ -238,3 +238,88 @@ use_ntech() {
   [[ "$output" == *"Feature structure"* ]]
   [[ "$output" != *"missing required dir"* ]]
 }
+
+# ── Architecture-aware check rules ───────────────────────────────────────────
+
+@test "clean check reports the domain rules on a valid feature" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" == *"Domain entities are pure"* ]]
+  [[ "$output" == *"Domain layer isolated"* ]]
+  [[ "$output" == *"Use cases depend on interfaces"* ]]
+  [[ "$output" == *"Repository implementations honour their contracts"* ]]
+}
+
+@test "ntech check does not run the clean domain rules" {
+  use_ntech
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" != *"Domain entities are pure"* ]]
+  [[ "$output" != *"Use cases depend on interfaces"* ]]
+}
+
+@test "clean check catches an entity importing Flutter" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  sed -i "1i import 'package:flutter/material.dart';" \
+    "$SANDBOX_DIR/lib/features/product/domain/entities/product.dart"
+
+  run bash "$FLUT_SCRIPT" check
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"entity imports Flutter or Dio"* ]]
+}
+
+@test "clean check catches an entity doing JSON" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  echo "// fromJson belongs in the model" \
+    >> "$SANDBOX_DIR/lib/features/product/domain/entities/product.dart"
+
+  run bash "$FLUT_SCRIPT" check
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"keep serialization in the data model"* ]]
+}
+
+@test "clean check catches the domain importing the data layer" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  sed -i "1i import '../../data/models/product_model.dart';" \
+    "$SANDBOX_DIR/lib/features/product/domain/repositories/product_repository.dart"
+
+  run bash "$FLUT_SCRIPT" check
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"domain imports the data layer"* ]]
+}
+
+@test "clean check catches a use case depending on a concrete repository" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  sed -i "s/class ProductUseCase/\/\/ ProductRepositoryImpl\nclass ProductUseCase/" \
+    "$SANDBOX_DIR/lib/features/product/domain/usecases/product_usecase.dart"
+
+  run bash "$FLUT_SCRIPT" check
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"depend on the interface"* ]]
+}
+
+@test "clean check warns when a repository implementation drops its contract" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  sed -i 's/implements ProductRepository//' \
+    "$SANDBOX_DIR/lib/features/product/data/repositories/product_repository_impl.dart"
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" == *"does not implement a domain repository interface"* ]]
+}
+
+# ── doctor is profile-aware ──────────────────────────────────────────────────
+
+@test "doctor requires the clean use case base class" {
+  mkdir -p "$SANDBOX_DIR/lib/core/usecase"
+  touch "$SANDBOX_DIR/lib/core/usecase/usecase.dart"
+  run bash "$FLUT_SCRIPT" doctor
+  [[ "$output" == *"25 files"* ]] || [[ "$output" == *"Scaffold structure"* ]]
+}
+
+@test "doctor counts more required files for clean than for ntech" {
+  run bash "$FLUT_SCRIPT" doctor
+  local clean_out="$output"
+  use_ntech
+  run bash "$FLUT_SCRIPT" doctor
+  [[ "$clean_out" != "$output" ]]
+}

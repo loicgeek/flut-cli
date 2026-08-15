@@ -170,3 +170,76 @@ EOF
   # Should have warnings about translation keys (screen tr() keys not in JSON yet)
   [[ "$output" == *"Translation key"* ]] || [[ "$output" == *"Feature structure"* ]]
 }
+
+# ── False positives that made a pristine scaffold fail its own audit ─────────
+
+@test "flut check does not treat shared widgets as bloc state files" {
+  mkdir -p "$SANDBOX_DIR/lib/shared/widgets"
+  cat > "$SANDBOX_DIR/lib/shared/widgets/empty_state.dart" <<'DART'
+import 'package:flutter/material.dart';
+
+class EmptyState extends StatelessWidget {
+  const EmptyState({super.key});
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+DART
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" != *"empty_state.dart — state file does not declare a sealed class"* ]]
+}
+
+@test "flut check matches DI registrations against snake_case files" {
+  mkdir -p "$SANDBOX_DIR/lib/core/di" "$SANDBOX_DIR/lib/core/config"
+  cat > "$SANDBOX_DIR/lib/core/config/app_config.dart" <<'DART'
+class AppConfig {
+  const AppConfig();
+}
+DART
+  cat > "$SANDBOX_DIR/lib/core/di/service_locator.dart" <<'DART'
+void setup() {
+  sl.registerSingleton<AppConfig>(config);
+}
+DART
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" != *"AppConfig is registered"* ]]
+}
+
+@test "flut check ignores commented-out DI registrations" {
+  mkdir -p "$SANDBOX_DIR/lib/core/di"
+  cat > "$SANDBOX_DIR/lib/core/di/service_locator.dart" <<'DART'
+void setup() {
+  // sl.registerSingleton<AuthRepository>(AuthRepository(sl()));
+  // sl.registerFactory<AuthCubit>(() => AuthCubit(sl()));
+}
+DART
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" != *"AuthRepository is registered"* ]]
+  [[ "$output" != *"AuthCubit is registered"* ]]
+}
+
+@test "flut check does not flag package classes registered in DI" {
+  mkdir -p "$SANDBOX_DIR/lib/core/di"
+  cat > "$SANDBOX_DIR/lib/core/di/service_locator.dart" <<'DART'
+void setup() {
+  sl.registerSingleton<Dio>(buildDioClient());
+}
+DART
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" != *"Dio is registered"* ]]
+}
+
+@test "flut check still reports a DI registration with no class anywhere" {
+  mkdir -p "$SANDBOX_DIR/lib/core/di"
+  cat > "$SANDBOX_DIR/lib/core/di/service_locator.dart" <<'DART'
+void setup() {
+  sl.registerSingleton<GhostRepository>(GhostRepository(sl()));
+}
+DART
+
+  run bash "$FLUT_SCRIPT" check
+  [[ "$output" == *"GhostRepository is registered"* ]]
+}

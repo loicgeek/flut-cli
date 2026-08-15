@@ -267,3 +267,109 @@ arch_generate_bloc() {
   echo "     Add a route that provides ${FLUT_PASCAL}Bloc"
   echo ""
 }
+
+# ── check ────────────────────────────────────────────────────────────────────
+# Extra rules enforcing the dependency rule: presentation -> domain <- data.
+# _check_pass/_check_err/_check_warn are defined by cmd_check before this runs.
+
+_clean_check_entity_purity() {
+  local files=() f rel err=0
+  while IFS= read -r -d '' f; do files+=("$f"); done \
+    < <(find lib/features -path '*/domain/entities/*.dart' -print0 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    log_info "No domain entities found — skipping entity purity check."
+    return
+  fi
+
+  for f in "${files[@]}"; do
+    rel="${f#lib/}"
+    if grep -qE "^[[:space:]]*import[[:space:]]+'package:(flutter|dio)/" "$f" 2>/dev/null; then
+      _check_err "$rel — entity imports Flutter or Dio; the domain layer must stay pure"
+      err=$((err + 1))
+    elif grep -qE 'fromJson|toJson' "$f" 2>/dev/null; then
+      _check_err "$rel — entity handles JSON; keep serialization in the data model"
+      err=$((err + 1))
+    fi
+  done
+
+  if [[ $err -eq 0 ]]; then
+    _check_pass "Domain entities are pure (${#files[@]} entities)"
+  fi
+}
+
+_clean_check_domain_isolation() {
+  local files=() f rel err=0
+  while IFS= read -r -d '' f; do files+=("$f"); done \
+    < <(find lib/features -path '*/domain/*' -name '*.dart' -print0 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    log_info "No domain layer found — skipping domain isolation check."
+    return
+  fi
+
+  for f in "${files[@]}"; do
+    rel="${f#lib/}"
+    if grep -qE "^[[:space:]]*import[[:space:]]+'[^']*data/" "$f" 2>/dev/null; then
+      _check_err "$rel — domain imports the data layer; dependencies must point inwards"
+      err=$((err + 1))
+    fi
+  done
+
+  if [[ $err -eq 0 ]]; then
+    _check_pass "Domain layer isolated (${#files[@]} files)"
+  fi
+}
+
+_clean_check_usecase_dependencies() {
+  local files=() f rel err=0
+  while IFS= read -r -d '' f; do files+=("$f"); done \
+    < <(find lib/features -path '*/domain/usecases/*.dart' -print0 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    log_info "No use cases found — skipping use case dependency check."
+    return
+  fi
+
+  for f in "${files[@]}"; do
+    rel="${f#lib/}"
+    if grep -qE '_repository_impl\.dart|RepositoryImpl' "$f" 2>/dev/null; then
+      _check_err "$rel — use case depends on a concrete repository; depend on the interface"
+      err=$((err + 1))
+    fi
+  done
+
+  if [[ $err -eq 0 ]]; then
+    _check_pass "Use cases depend on interfaces (${#files[@]} use cases)"
+  fi
+}
+
+_clean_check_repository_contracts() {
+  local files=() f rel err=0
+  while IFS= read -r -d '' f; do files+=("$f"); done \
+    < <(find lib/features -path '*/data/repositories/*_repository_impl.dart' -print0 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    log_info "No repository implementations found — skipping contract check."
+    return
+  fi
+
+  for f in "${files[@]}"; do
+    rel="${f#lib/}"
+    if ! grep -qE 'implements[[:space:]]+[A-Za-z0-9_]*Repository\b' "$f" 2>/dev/null; then
+      _check_warn "$rel — does not implement a domain repository interface"
+      err=$((err + 1))
+    fi
+  done
+
+  if [[ $err -eq 0 ]]; then
+    _check_pass "Repository implementations honour their contracts (${#files[@]})"
+  fi
+}
+
+arch_check_extra() {
+  _clean_check_entity_purity
+  _clean_check_domain_isolation
+  _clean_check_usecase_dependencies
+  _clean_check_repository_contracts
+}

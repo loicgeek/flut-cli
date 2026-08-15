@@ -234,6 +234,7 @@ _manifest_env() {
   RUNTIME_PACKAGES=()
   DEV_PACKAGES=()
   BANNED_PACKAGES=(freezed json_serializable)
+  DI_EXTERNAL_CLASSES=()
   FEATURE_DIRS=()
   REQUIRED_DIRS=()
   REQUIRED_FILES=()

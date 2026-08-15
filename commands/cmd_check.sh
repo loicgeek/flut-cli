@@ -7,6 +7,7 @@ cmd_check() {
   local errors=0
 
   _manifest_env
+  _layout_env
 
   # ── helpers for internal check functions ────────────────────────────────────
   # Note: use $((var + 1)) instead of var=$((var + 1)) because with set -e,
@@ -48,10 +49,13 @@ cmd_check() {
 
   # ── Check 2: State is sealed ───────────────────────────────────────────────
   _check_2_sealed_states() {
+    # Only feature state belongs to a state machine. Widgets such as
+    # shared/widgets/empty_state.dart end in _state.dart but are not bloc
+    # states, and flagging them made a pristine scaffold fail its own audit.
     local files=()
     while IFS= read -r -d '' f; do
       files+=("$f")
-    done < <(find lib/ -name '*_state.dart' -print0 2>/dev/null)
+    done < <(find lib/features -name '*_state.dart' -print0 2>/dev/null)
 
     local total=${#files[@]}
     local valid=0
@@ -184,11 +188,13 @@ cmd_check() {
     local total=0
     local matched=0
 
-    # Find all sl.registerSingleton<...> and sl.registerFactory<...>
+    # Find all sl.registerSingleton<...> and sl.registerFactory<...>,
+    # ignoring commented-out example registrations.
     local registrations=()
     while IFS= read -r line; do
       registrations+=("$line")
-    done < <(echo "$sl_content" | grep -oE 'sl\.(registerSingleton|registerFactory)<[A-Za-z0-9_]+>' || true)
+    done < <(echo "$sl_content" | sed 's://.*::' \
+      | grep -oE 'sl\.(registerSingleton|registerFactory)<[A-Za-z0-9_]+>' || true)
 
     total=${#registrations[@]}
 
@@ -200,12 +206,24 @@ cmd_check() {
     for reg in "${registrations[@]}"; do
       local class_name
       class_name=$(echo "$reg" | sed 's/.*<//; s/>.*//')
-      local file
-      file=$(find lib/ -name "${class_name}.dart" -print -quit 2>/dev/null)
-      if [[ -n "$file" ]]; then
+
+      # Classes the profile registers from packages have no file in lib/
+      local external=false ext
+      for ext in "${DI_EXTERNAL_CLASSES[@]}"; do
+        [[ "$ext" == "$class_name" ]] && external=true && break
+      done
+      if [[ "$external" == true ]]; then
+        matched=$((matched + 1))
+        continue
+      fi
+
+      # Match the declaration, not the filename: flut writes snake_case files,
+      # so looking for AppConfig.dart never found lib/core/config/app_config.dart.
+      if grep -rqE "^[[:space:]]*(abstract[[:space:]]+)?(interface[[:space:]]+)?(final[[:space:]]+|sealed[[:space:]]+|base[[:space:]]+)?class[[:space:]]+${class_name}\b" \
+           --include='*.dart' lib/ 2>/dev/null; then
         matched=$((matched + 1))
       else
-        _check_warn "$class_name is registered in service_locator.dart but no corresponding file found"
+        _check_warn "$class_name is registered in service_locator.dart but no class declaration was found in lib/"
         err=$((err + 1))
       fi
     done
@@ -362,6 +380,11 @@ cmd_check() {
   _check_7_translation_keys
   _check_8_orphaned_generated
   _check_9_cubit_convention
+
+  # Rules that only make sense for the active architecture
+  if declare -f arch_check_extra >/dev/null 2>&1; then
+    arch_check_extra
+  fi
 
   # ── Summary ────────────────────────────────────────────────────────────────
   echo ""
