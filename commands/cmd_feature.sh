@@ -4,6 +4,9 @@
 #  Parses and validates arguments, then delegates file layout to the active
 #  architecture's hooks (see architectures/<arch>/layout.sh).
 # ==============================================================================
+
+# The FLUT_* hook-contract variables below are read by architectures/*/layout.sh
+# shellcheck disable=SC2034
 cmd_feature() {
   local name="${1:-}"
   local use_bloc=false

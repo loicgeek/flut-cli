@@ -175,6 +175,8 @@ _arch_exists() {
   [[ -n "$arch" && -d "$FLUT_ARCH_DIR/$arch" ]]
 }
 
+# ARCH_NAME/ARCH_DESCRIPTION are consumed by cmd_architecture.sh
+# shellcheck disable=SC2034
 # Load an architecture's manifest metadata (ARCH_NAME, ARCH_DESCRIPTION)
 _arch_manifest() {
   ARCH_NAME=""
@@ -229,6 +231,8 @@ _manifest_source() {
 # Populates RUNTIME_PACKAGES / DEV_PACKAGES / BANNED_PACKAGES / FEATURE_DIRS /
 # REQUIRED_DIRS / REQUIRED_FILES. Falls back to safe defaults when a profile
 # does not ship a manifest.sh.
+# The defaults below are read by the command modules, not by this file.
+# shellcheck disable=SC2034
 _manifest_env() {
   ARCH_EXTENDS=""
   RUNTIME_PACKAGES=()
@@ -243,6 +247,8 @@ _manifest_env() {
 
 # Load the active architecture's layout hooks (arch_feature_scaffold, ...).
 # Parents first so a child profile can override individual hooks.
+# ARCH_GENERATE_TYPES is consumed by cmd_generate.sh
+# shellcheck disable=SC2034
 _layout_env() {
   local arch parent
   ARCH_GENERATE_TYPES=()

@@ -5,6 +5,9 @@
 #  package lists, scaffold layout, and check/doctor rules.
 # =============================================================================
 
+# Every value here is consumed by flut.sh and the command modules.
+# shellcheck disable=SC2034
+
 ARCH_NAME="ntech"
 ARCH_DESCRIPTION="Features-first: core, shared, features (default)"
 

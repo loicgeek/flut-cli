@@ -7,16 +7,35 @@
 
 > Flutter project scaffold CLI — by [NTECH-SERVICES](https://github.com/loicgeek)
 
-`flut` is an opinionated bash CLI that bootstraps Flutter projects and features
-following the NTECH-SERVICES architecture standard:
+`flut` is an opinionated bash CLI that bootstraps Flutter projects and features.
+Whichever architecture you pick, the same principles hold:
 
-- **Features-first** folder structure
 - **Plain Dart** models — no `json_serializable`, no codegen for data classes
 - **Plain sealed classes** for state — no `freezed`
 - **AutoRoute only** for navigation — one codegen dependency, nothing else
 - **Manual GetIt** registration — no `injectable`
 - **Cubit by default**, Bloc on demand
 - Per-feature `RouterModule` with a shared custom transition builder
+
+### Choose an architecture
+
+The feature layout is a per-project choice, stored in `flut.json`:
+
+| Profile | Feature slice | Pick it when |
+|---------|---------------|--------------|
+| **`ntech`** *(default)* | `business_logic/` · `data/` · `presentation/` | You want the NTECH-SERVICES standard — the leanest path from screen to API |
+| **`clean`** | `domain/` · `data/` · `presentation/` | You want entities, repository interfaces and use cases, and a domain layer that never sees Dio or JSON |
+
+```bash
+flut init                        # ntech (default)
+flut init --architecture clean   # Clean Architecture
+flut architecture                # show installed profiles and the current one
+```
+
+Existing projects are unaffected: with no `flut.json`, `flut` behaves exactly
+as it always has. Both profiles share the same core scaffold (API client, DI,
+router, theme, storage, error handling) and the same commands — only the
+feature layout and the available `generate` types differ.
 
 ---
 
@@ -89,6 +108,9 @@ rm -rf ~/.flut-cli
 
 ```
 flut init                               Init full lib/ scaffold + install packages
+flut init --architecture <name>         Init with a specific architecture
+flut architecture                       List installed architectures / show current
+flut architecture --set <name>          Switch the project's architecture
 flut feature <name>                     Add a feature (Cubit)
 flut feature <name> --bloc              Add a feature (Bloc)
 flut feature <name> --service           Add a feature with Service layer
@@ -98,6 +120,9 @@ flut generate screen <feat> [name]      Generate a screen into an existing featu
 flut generate repository <feat> [name]  Generate a repository
 flut generate cubit <feat> [name]       Generate a Cubit + state
 flut generate bloc <feat> [name]        Generate a Bloc + events + state
+flut generate entity <feat> [name]      Domain entity            (clean only)
+flut generate usecase <feat> [name]     Use case                 (clean only)
+flut generate datasource <feat> [name]  Remote data source       (clean only)
 flut check                              Audit architecture conventions
 flut doctor                             Check project health
 flut assets check                       Detect unused Flutter assets
@@ -171,7 +196,10 @@ dev: build_runner  auto_route_generator
 
 ### `flut feature <name> [--bloc] [--service]`
 
-Scaffolds a complete feature slice under `lib/features/<name>/`.
+Scaffolds a complete feature slice under `lib/features/<name>/`. The layout
+depends on the project's architecture.
+
+**`ntech` (default):**
 
 ```
 lib/features/<name>/
@@ -189,6 +217,29 @@ lib/features/<name>/
     ├── screens/<name>_screen.dart      ← @RoutePage(), BlocProvider, BlocConsumer
     └── widgets/                        ← empty, ready for components
 ```
+
+**`clean`:**
+
+```
+lib/features/<name>/
+├── domain/                             ← pure Dart: no Flutter, no Dio, no JSON
+│   ├── entities/<name>.dart
+│   ├── repositories/<name>_repository.dart      ← abstract interface
+│   └── usecases/<name>_usecase.dart             ← depends on the interface
+├── data/
+│   ├── models/<name>_model.dart                 ← extends the entity, adds JSON
+│   ├── datasources/<name>_remote_datasource.dart
+│   └── repositories/<name>_repository_impl.dart ← implements the interface
+└── presentation/
+    ├── bloc/                                    ← state + cubit (or bloc + events)
+    ├── router/<name>_router_module.dart
+    ├── screens/<name>_screen.dart               ← depends on the use case
+    └── widgets/
+```
+
+Dependencies point inwards only — `presentation -> domain <- data` — and
+`flut check` enforces it. `--service` is ignored in `clean`, since
+`data/datasources/` already isolates data access.
 
 **After generation, follow the printed checklist:**
 
@@ -214,6 +265,17 @@ Generates individual components into an existing feature (not full feature slice
 | `bloc` | `flut generate bloc auth login` | `login_bloc.dart` + `login_event.dart` + shared state |
 
 If the name is omitted, it defaults to the feature name (e.g., `flut generate model auth` creates `auth_model.dart`).
+
+**Clean Architecture adds three more:**
+
+| Sub-command | Example | Creates |
+|---|---|---|
+| `entity` | `flut generate entity product category` | `domain/entities/category.dart` — pure Dart |
+| `usecase` | `flut generate usecase product category` | `domain/usecases/category_usecase.dart`, plus the entity and repository interface it needs |
+| `datasource` | `flut generate datasource product category` | `data/datasources/category_remote_datasource.dart`, plus the model and entity |
+
+Each generator creates the pieces it depends on when they are missing, so
+generated code always resolves.
 
 ---
 
@@ -257,15 +319,22 @@ Audits the Flutter project for architecture convention violations.
 **Exit codes:** `0` = all clear, `1` = warnings, `2` = errors
 
 **Checks performed:**
-1. Feature structure completeness
+1. Feature structure completeness — against the project's architecture
 2. State classes are sealed
 3. No banned codegen packages (`freezed`, `json_serializable`)
 4. Layer boundaries (presentation doesn't import data/ directly)
 5. Router registration (screens referenced in app_router.dart)
-6. DI registration (registered classes have corresponding files)
+6. DI registration (registered classes are declared somewhere in lib/)
 7. Translation keys (tr() calls exist in both en.json and fr.json)
 8. No orphaned generated files
 9. Cubit/Bloc convention (uses AppFailure, not generic Exception)
+
+**With `clean`, four more rules enforce the dependency rule:**
+
+10. Domain entities are pure — no Flutter, no Dio, no JSON
+11. Nothing under `domain/` imports the data layer
+12. Use cases depend on repository interfaces, not implementations
+13. Each `*_repository_impl.dart` declares the contract it implements
 
 ---
 
@@ -308,13 +377,18 @@ Without `--service`, the Cubit/Bloc injects the repository directly — keeping 
 ```
 lib/
 ├── core/          shared infrastructure (DI, router, API, theme, error…)
-├── features/      one folder per domain feature
+├── features/      one folder per domain feature — layout set by flut.json
 │   └── <name>/
-│       ├── business_logic/   Cubit or Bloc + sealed State
-│       ├── data/             Model + Repository
-│       └── presentation/     Screen + per-feature RouterModule + Widgets
+│       ├── business_logic/   ntech: Cubit or Bloc + sealed State
+│       ├── domain/           clean: entities, repository interfaces, use cases
+│       ├── data/             Models + Repositories (+ data sources in clean)
+│       └── presentation/     Screens + per-feature RouterModule + Widgets
 └── shared/        cross-feature widgets, models, utils
 ```
+
+`core/` and `shared/` are identical in both profiles; only `features/<name>/`
+differs. `clean` also adds `core/usecase/usecase.dart`, the contract every use
+case implements.
 
 ### State management pattern
 

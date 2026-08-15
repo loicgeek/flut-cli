@@ -5,6 +5,9 @@
 #  architecture (ARCH_GENERATE_TYPES + arch_generate_<type> in layout.sh).
 # ==============================================================================
 
+# The FLUT_* hook-contract variables below are read by architectures/*/layout.sh
+# shellcheck disable=SC2034
+
 cmd_generate() {
   local type="${1:-}"
   local feature="${2:-}"

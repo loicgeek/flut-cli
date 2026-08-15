@@ -3,6 +3,11 @@
 # cmd_assets.sh — Flutter Assets Analyzer (Bash 3.2 / macOS safe)
 # ==============================================================================
 
+# SC2126: `grep | wc -l` is deliberate - `grep -c` exits 1 on zero matches,
+#         which would trip `set -e` in these counters.
+# SC2059: the printf formats embed colour variables, which is intentional here.
+# shellcheck disable=SC2126,SC2059
+
 # ── Colors ─────────────────────────────────────────────────────────────────────
 _A_RESET="\033[0m"
 _A_RED="\033[31m"

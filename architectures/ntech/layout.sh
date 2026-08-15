@@ -18,6 +18,8 @@
 #  arch_init_extra. ARCH_GENERATE_TYPES lists the supported `generate` types.
 # =============================================================================
 
+# Consumed by cmd_generate.sh
+# shellcheck disable=SC2034
 ARCH_GENERATE_TYPES=(model screen repository cubit bloc)
 
 # ── feature ──────────────────────────────────────────────────────────────────

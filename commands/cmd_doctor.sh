@@ -2,6 +2,8 @@
 #  COMMAND: doctor — Project Health
 # ==============================================================================
 
+# REQUIRED_DIRS/REQUIRED_FILES/RUNTIME_PACKAGES come from the manifest
+# shellcheck disable=SC2153
 cmd_doctor() {
   local issues=0
 

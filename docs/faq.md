@@ -104,6 +104,41 @@ flut feature auth feature ✗  (spaces)
 
 ## Architecture decisions
 
+### Which architecture should I choose?
+
+`ntech` (the default) is the shortest path from a screen to an API call: a
+Cubit talks to a repository, which talks to Dio. Choose it for CRUD-style apps
+and small-to-medium features.
+
+`clean` adds a domain layer — entities, repository interfaces and use cases —
+between the two. It costs about four extra files per feature and buys you a
+domain that compiles without Flutter, use cases you can test against a fake
+repository, and the freedom to swap a data source without touching business
+rules. Choose it for long-lived apps, non-trivial business rules, or when a
+team wants those boundaries enforced by the tooling.
+
+If you are unsure, start with `ntech`. Both share the same `core/`, the same
+packages and the same commands, so the migration is a per-feature move rather
+than a rewrite.
+
+### Can I change architecture after `flut init`?
+
+Yes — `flut architecture --set clean` rewrites `flut.json`, and every later
+`flut feature` / `flut generate` / `flut check` follows it. Features you
+already generated are **not** migrated; existing ones keep their layout and
+`flut check` will report them against the new architecture's rules. In
+practice, switch when starting a new feature, then move the old ones as you
+touch them.
+
+### Why does `clean` throw `AppFailure` instead of returning `Either`?
+
+Returning `Either<Failure, T>` from every use case is the more common Clean
+Architecture treatment, but it needs a functional-programming package
+(`dartz` or `fpdart`) and changes every call site. `core/error/` already
+provides `AppFailure`, so use cases throw it and the same
+`on AppFailure catch` pattern works in both profiles. That keeps the
+dependency list identical and the two profiles mutually legible.
+
 ### Why no `freezed`?
 
 Dart 3.0 introduced `sealed` classes with exhaustiveness checking built into the compiler. `freezed` solves the same problem but requires:

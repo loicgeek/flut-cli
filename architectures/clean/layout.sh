@@ -11,6 +11,8 @@
 #  See architectures/ntech/layout.sh for the hook contract.
 # =============================================================================
 
+# Consumed by cmd_generate.sh
+# shellcheck disable=SC2034
 ARCH_GENERATE_TYPES=(entity usecase model datasource repository screen cubit bloc)
 
 # ── init ─────────────────────────────────────────────────────────────────────

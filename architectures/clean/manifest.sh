@@ -6,6 +6,9 @@
 #  domain plumbing are defined here.
 # =============================================================================
 
+# Every value here is consumed by flut.sh and the command modules.
+# shellcheck disable=SC2034
+
 ARCH_NAME="clean"
 ARCH_DESCRIPTION="Clean Architecture: domain, data, presentation per feature"
 ARCH_EXTENDS="ntech"
