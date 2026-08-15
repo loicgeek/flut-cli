@@ -143,6 +143,19 @@ _ntech_ensure_repository() {
   fi
 }
 
+# A generated cubit/bloc shares the feature's state, so it reads the feature's
+# repository - a component-named one would return the wrong element type.
+_ntech_ensure_feature_repository() {
+  local m="$FLUT_BASE/data/models/${FLUT_FEATURE}_model.dart"
+  [[ -f "$m" ]] || mkf_tpl "$m" "generate/model.dart" Pascal="$FLUT_FEATURE_PASCAL"
+
+  local f="$FLUT_BASE/data/repositories/${FLUT_FEATURE}_repository.dart"
+  if [[ ! -f "$f" ]]; then
+    add_api_endpoint "$FLUT_FEATURE"
+    mkf_tpl "$f" "generate/repository.dart" Pascal="$FLUT_FEATURE_PASCAL" name="$FLUT_FEATURE"
+  fi
+}
+
 # Bind a generated screen to the state manager the feature actually uses
 _ntech_feature_bl_vars() {
   if [[ -f "$FLUT_BASE/business_logic/${FLUT_FEATURE}_bloc.dart" ]]; then
@@ -188,6 +201,7 @@ arch_generate_screen() {
 
 arch_generate_repository() {
   add_api_endpoint "$FLUT_NAME"
+  _ntech_ensure_model
   mkf_tpl "$FLUT_BASE/data/repositories/${FLUT_NAME}_repository.dart" "generate/repository.dart" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
   echo ""
   log_section "Next steps for ${FLUT_FEATURE}.${FLUT_NAME}_repository"
@@ -201,7 +215,7 @@ arch_generate_repository() {
 }
 
 arch_generate_cubit() {
-  _ntech_ensure_repository
+  _ntech_ensure_feature_repository
   local state_file="$FLUT_BASE/business_logic/${FLUT_FEATURE}_state.dart"
   if [[ ! -f "$state_file" ]]; then
     mkf_tpl "$state_file" "generate/state.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL"
@@ -220,7 +234,7 @@ arch_generate_cubit() {
 }
 
 arch_generate_bloc() {
-  _ntech_ensure_repository
+  _ntech_ensure_feature_repository
   local state_file="$FLUT_BASE/business_logic/${FLUT_FEATURE}_state.dart"
   if [[ ! -f "$state_file" ]]; then
     mkf_tpl "$state_file" "generate/state.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL"

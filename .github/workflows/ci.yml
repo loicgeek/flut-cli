@@ -102,6 +102,26 @@ jobs:
           test -d lib/features/auth && echo "✓ feature created"
         working-directory: /tmp/flutter_test_project
 
+      - name: Exercise every generator
+        run: |
+          bash "$GITHUB_WORKSPACE/flut.sh" feature cart --service
+          bash "$GITHUB_WORKSPACE/flut.sh" feature order --bloc
+          bash "$GITHUB_WORKSPACE/flut.sh" generate model auth item
+          bash "$GITHUB_WORKSPACE/flut.sh" generate repository auth stock
+          bash "$GITHUB_WORKSPACE/flut.sh" generate cubit auth listing
+          bash "$GITHUB_WORKSPACE/flut.sh" generate bloc auth actions
+          bash "$GITHUB_WORKSPACE/flut.sh" generate screen auth detail
+          bash "$GITHUB_WORKSPACE/flut.sh" generate screen order summary
+        working-directory: /tmp/flutter_test_project
+
+      # The real guard: generated code must compile and analyze cleanly.
+      # String assertions in BATS cannot catch a wrong part/import directive.
+      - name: Generated project must build and analyze clean
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          flutter analyze
+        working-directory: /tmp/flutter_test_project
+
       # A project flut just generated must not fail its own audit.
       # 0 = clean, 1 = warnings (routes the user still has to register), 2 = errors
       - name: Audit the scaffolded project
@@ -126,6 +146,24 @@ jobs:
           test -d lib/features/product/data/datasources    && echo "✓ data/"
           test -d lib/features/product/presentation/bloc   && echo "✓ presentation/"
           test ! -d lib/features/product/business_logic    && echo "✓ no ntech layout"
+        working-directory: /tmp/flutter_clean_project
+
+      - name: Exercise the clean-only generators
+        run: |
+          bash "$GITHUB_WORKSPACE/flut.sh" feature order --bloc
+          bash "$GITHUB_WORKSPACE/flut.sh" generate entity product category
+          bash "$GITHUB_WORKSPACE/flut.sh" generate usecase product category
+          bash "$GITHUB_WORKSPACE/flut.sh" generate datasource product category
+          bash "$GITHUB_WORKSPACE/flut.sh" generate repository product stock
+          bash "$GITHUB_WORKSPACE/flut.sh" generate cubit product listing
+          bash "$GITHUB_WORKSPACE/flut.sh" generate bloc product actions
+          bash "$GITHUB_WORKSPACE/flut.sh" generate screen order summary
+        working-directory: /tmp/flutter_clean_project
+
+      - name: Clean project must build and analyze clean
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          flutter analyze
         working-directory: /tmp/flutter_clean_project
 
       - name: Audit the clean project

@@ -348,3 +348,11 @@ use_ntech() {
   [ "$status" -eq 0 ]
   assert_file_contains "lib/core/api/api_endpoints.dart" "static const products = '/products';"
 }
+
+@test "clean generate cubit reads the feature use case so entity types line up" {
+  bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate cubit product listing
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/product/presentation/bloc/listing_cubit.dart" "ProductUseCase"
+  assert_file_not_contains "lib/features/product/presentation/bloc/listing_cubit.dart" "ListingUseCase"
+}

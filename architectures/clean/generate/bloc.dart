@@ -2,7 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/error/failures.dart';
 import '../../../../core/usecase/usecase.dart';
-import '../../domain/usecases/{{name}}_usecase.dart';
+import '../../domain/usecases/{{Feature}}_usecase.dart';
 import '{{name}}_event.dart';
 import '{{Feature}}_state.dart';
 
@@ -15,7 +15,7 @@ class {{Pascal}}Bloc extends Bloc<{{Pascal}}Event, {{FeaturePascal}}State> {
     on<{{Pascal}}Refresh>(_onRefresh);
   }
 
-  final {{Pascal}}UseCase _useCase;
+  final {{FeaturePascal}}UseCase _useCase;
 
   Future<void> _onLoad({{Pascal}}Load event, Emitter<{{FeaturePascal}}State> emit) async {
     emit(const {{FeaturePascal}}Loading());

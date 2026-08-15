@@ -144,19 +144,25 @@ teardown() {
 
 # ── Generated code must reference only things that exist ─────────────────────
 
-@test "generate cubit creates the repository it imports" {
+@test "generate cubit recreates the feature repository when it is missing" {
   bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  rm "$SANDBOX_DIR/lib/features/product/data/repositories/product_repository.dart"
+  rm "$SANDBOX_DIR/lib/features/product/data/models/product_model.dart"
+
   run bash "$FLUT_SCRIPT" generate cubit product listing
   [ "$status" -eq 0 ]
-  assert_file_exists "lib/features/product/data/repositories/listing_repository.dart"
-  assert_file_exists "lib/features/product/data/models/listing_model.dart"
+  # the cubit imports the feature repository, so it must exist afterwards
+  assert_file_exists "lib/features/product/data/repositories/product_repository.dart"
+  assert_file_exists "lib/features/product/data/models/product_model.dart"
 }
 
-@test "generate bloc creates the repository it imports" {
+@test "generate bloc recreates the feature repository when it is missing" {
   bash "$FLUT_SCRIPT" feature product >/dev/null 2>&1
+  rm "$SANDBOX_DIR/lib/features/product/data/repositories/product_repository.dart"
+
   run bash "$FLUT_SCRIPT" generate bloc product actions
   [ "$status" -eq 0 ]
-  assert_file_exists "lib/features/product/data/repositories/actions_repository.dart"
+  assert_file_exists "lib/features/product/data/repositories/product_repository.dart"
 }
 
 @test "generate screen binds to the feature's bloc when it uses one" {
@@ -201,4 +207,28 @@ teardown() {
   run bash "$FLUT_SCRIPT" feature product
   [ "$status" -eq 0 ]
   assert_file_exists "lib/features/product/data/repositories/product_repository.dart"
+}
+
+@test "generate cubit reads the feature repository so state types line up" {
+  bash "$FLUT_SCRIPT" feature auth >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate cubit auth listing
+  [ "$status" -eq 0 ]
+  # shares AuthState, so it must read AuthRepository, not ListingRepository
+  assert_file_contains "lib/features/auth/business_logic/listing_cubit.dart" "AuthRepository"
+  assert_file_not_contains "lib/features/auth/business_logic/listing_cubit.dart" "ListingRepository"
+}
+
+@test "generate bloc reads the feature repository so state types line up" {
+  bash "$FLUT_SCRIPT" feature auth >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate bloc auth actions
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/auth/business_logic/actions_bloc.dart" "AuthRepository"
+  assert_file_not_contains "lib/features/auth/business_logic/actions_bloc.dart" "ActionsRepository"
+}
+
+@test "generate repository creates the model it imports" {
+  bash "$FLUT_SCRIPT" feature auth >/dev/null 2>&1
+  run bash "$FLUT_SCRIPT" generate repository auth stock
+  [ "$status" -eq 0 ]
+  assert_file_exists "lib/features/auth/data/models/stock_model.dart"
 }

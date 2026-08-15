@@ -56,6 +56,19 @@ _clean_ensure_datasource() {
   [[ -f "$f" ]] || mkf_tpl "$f" "feature/datasource.dart" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
 }
 
+# A generated cubit/bloc shares the feature's state, so it reads the feature's
+# use case - a component-named one would return the wrong entity type.
+_clean_ensure_feature_usecase() {
+  local e="$FLUT_BASE/domain/entities/${FLUT_FEATURE}.dart"
+  [[ -f "$e" ]] || mkf_tpl "$e" "feature/entity.dart" Pascal="$FLUT_FEATURE_PASCAL"
+
+  local r="$FLUT_BASE/domain/repositories/${FLUT_FEATURE}_repository.dart"
+  [[ -f "$r" ]] || mkf_tpl "$r" "feature/repository_interface.dart" Pascal="$FLUT_FEATURE_PASCAL" name="$FLUT_FEATURE"
+
+  local u="$FLUT_BASE/domain/usecases/${FLUT_FEATURE}_usecase.dart"
+  [[ -f "$u" ]] || mkf_tpl "$u" "feature/usecase.dart" Pascal="$FLUT_FEATURE_PASCAL" name="$FLUT_FEATURE"
+}
+
 _clean_ensure_feature_state() {
   local f="$FLUT_BASE/presentation/bloc/${FLUT_FEATURE}_state.dart"
   [[ -f "$f" ]] || mkf_tpl "$f" "generate/state.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL"
@@ -261,7 +274,7 @@ arch_generate_screen() {
 }
 
 arch_generate_cubit() {
-  _clean_ensure_usecase
+  _clean_ensure_feature_usecase
   _clean_ensure_feature_state
   mkf_tpl "$FLUT_BASE/presentation/bloc/${FLUT_NAME}_cubit.dart" "generate/cubit.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
   echo ""
@@ -276,7 +289,7 @@ arch_generate_cubit() {
 }
 
 arch_generate_bloc() {
-  _clean_ensure_usecase
+  _clean_ensure_feature_usecase
   _clean_ensure_feature_state
   mkf_tpl "$FLUT_BASE/presentation/bloc/${FLUT_NAME}_event.dart" "generate/event.dart" Pascal="$FLUT_PASCAL"
   mkf_tpl "$FLUT_BASE/presentation/bloc/${FLUT_NAME}_bloc.dart" "generate/bloc.dart" Feature="$FLUT_FEATURE" FeaturePascal="$FLUT_FEATURE_PASCAL" Pascal="$FLUT_PASCAL" name="$FLUT_NAME"
