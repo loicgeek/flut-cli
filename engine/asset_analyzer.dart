@@ -2,9 +2,20 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 
+const _assetExtensions =
+    r'png|jpg|jpeg|svg|webp|gif|json|ttf|otf|mp4|mp3|riv|lottie|pdf';
+
 // Matches complete asset paths with all Flutter-supported extensions.
 final _assetRegex = RegExp(
-  r'assets/[a-zA-Z0-9_\-/.]+\.(png|jpg|jpeg|svg|webp|gif|json|ttf|otf|mp4|mp3|riv|lottie|pdf)',
+  r'assets/[a-zA-Z0-9_\-/.]+\.(' + _assetExtensions + r')',
+);
+
+// Matches a bare filename literal such as 'close.svg'. Code frequently builds
+// paths at runtime ("'$iconDir/close.svg'" or a helper taking a filename), and
+// reporting those assets as unused would lead `flut assets clean` to delete a
+// file that is in fact used. Emitting the bare name lets the caller match on it.
+final _bareNameRegex = RegExp(
+  '''['"]([A-Za-z0-9_\\-]+\\.(?:$_assetExtensions))['"]''',
 );
 
 void main() {
@@ -135,5 +146,10 @@ void _resolveUsages(
     if (pattern.hasMatch(content)) {
       out.add(entry.value);
     }
+  }
+
+  // 3. Bare filename literals, for paths assembled at runtime.
+  for (final m in _bareNameRegex.allMatches(content)) {
+    out.add(m.group(1)!);
   }
 }

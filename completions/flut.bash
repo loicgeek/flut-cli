@@ -13,6 +13,32 @@ _flut_list_features() {
   echo "${features[*]}"
 }
 
+_flut_list_architectures() {
+  local cli_dir archs=() d
+  cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  if [[ -n "$cli_dir" && -d "$cli_dir/architectures" ]]; then
+    for d in "$cli_dir/architectures"/*/; do
+      [[ -d "$d" ]] && archs+=("$(basename "$d")")
+    done
+  fi
+  echo "${archs[*]}"
+}
+
+# Generate types depend on the architecture the current project uses
+_flut_list_generate_types() {
+  local cli_dir arch="ntech" layout types
+  if [[ -f "flut.json" ]]; then
+    arch="$(sed -nE 's/.*"architecture"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' flut.json | head -n 1)"
+    [[ -n "$arch" ]] || arch="ntech"
+  fi
+  cli_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  layout="$cli_dir/architectures/$arch/layout.sh"
+  if [[ -f "$layout" ]]; then
+    types="$(sed -nE 's/^ARCH_GENERATE_TYPES=\((.*)\)/\1/p' "$layout" | head -n 1)"
+  fi
+  echo "${types:-model screen repository cubit bloc}"
+}
+
 _flut_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -24,7 +50,7 @@ _flut_complete() {
   COMPREPLY=()
 
   if [[ ${COMP_CWORD} -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "init feature upgrade check doctor generate assets clean --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "init feature architecture upgrade check doctor generate assets clean --help -h" -- "$cur"))
     return
   fi
 
@@ -32,9 +58,27 @@ _flut_complete() {
     feature)
       COMPREPLY=($(compgen -W "--bloc --service" -- "$cur"))
       ;;
+    init)
+      if [[ "$prev" == "--architecture" || "$prev" == "-a" ]]; then
+        local archs
+        archs=$(_flut_list_architectures)
+        COMPREPLY=($(compgen -W "$archs" -- "$cur"))
+      else
+        COMPREPLY=($(compgen -W "--architecture" -- "$cur"))
+      fi
+      ;;
+    architecture)
+      if [[ ${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "list --set" -- "$cur"))
+      elif [[ "$prev" == "--set" || "$prev" == "-s" ]]; then
+        local archs
+        archs=$(_flut_list_architectures)
+        COMPREPLY=($(compgen -W "$archs" -- "$cur"))
+      fi
+      ;;
     generate)
       if [[ ${COMP_CWORD} -eq 2 ]]; then
-        COMPREPLY=($(compgen -W "model screen repository cubit bloc" -- "$cur"))
+        COMPREPLY=($(compgen -W "$(_flut_list_generate_types)" -- "$cur"))
       elif [[ "$prev" == "--feature" || "$prev" == "-f" ]]; then
         local features
         features=$(_flut_list_features)

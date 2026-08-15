@@ -3,6 +3,9 @@
 # cmd_assets.sh — Flutter Assets Analyzer (Bash 3.2 / macOS safe)
 # ==============================================================================
 
+# SC2059: the printf formats embed colour variables, which is intentional here.
+# shellcheck disable=SC2059
+
 # ── Colors ─────────────────────────────────────────────────────────────────────
 _A_RESET="\033[0m"
 _A_RED="\033[31m"
@@ -59,7 +62,13 @@ _assets_category() {
 }
 
 # ── Size helpers ───────────────────────────────────────────────────────────────
-_assets_size() { stat -f%z "$1" 2>/dev/null || echo 0; }
+# Portable byte size: `stat -f%z` is BSD-only and silently returned 0 on Linux,
+# which made every size and the whole "wasted space" summary read as 0 B.
+_assets_size() {
+  local n
+  n=$(wc -c < "$1" 2>/dev/null | tr -d '[:space:]') || true
+  echo "${n:-0}"
+}
 
 _assets_fmt_size() {
   local b="$1"
@@ -88,9 +97,46 @@ _assets_index_pubspec() {
   ' pubspec.yaml 2>/dev/null > "$_ASSETS_PUBSPEC_INDEX"
 }
 
+# ── Dart AST engine ────────────────────────────────────────────────────────────
+# The engine is a small Dart package with its own dependency on `analyzer`.
+# Its .dart_tool/package_config.json records absolute paths, so it is generated
+# per machine on first use rather than shipped.
+_assets_engine_ready() {
+  local cfg="$1/.dart_tool/package_config.json"
+  [[ -f "$cfg" ]] || return 1
+  # The recorded paths belong to whoever ran `pub get`; make sure they exist here
+  local root
+  root=$(grep -o '"rootUri"[[:space:]]*:[[:space:]]*"file://[^"]*analyzer-[^"]*"' "$cfg" 2>/dev/null \
+    | head -n 1 | sed 's|.*file://||; s|"$||')
+  [[ -n "$root" && -d "$root" ]]
+}
+
+_assets_prepare_engine() {
+  local dir="$1"
+  _assets_engine_ready "$dir" && return 0
+
+  if ! command -v dart &>/dev/null; then
+    log_error "dart not found in PATH — required by the asset analyzer."
+    exit 1
+  fi
+
+  log_info "Preparing asset engine (first run)..."
+  if ! (cd "$dir" && dart pub get >/dev/null 2>&1); then
+    log_error "Could not resolve the asset engine's dependencies."
+    log_info  "Run manually:  cd \"$dir\" && dart pub get"
+    exit 1
+  fi
+
+  if ! _assets_engine_ready "$dir"; then
+    log_error "Asset engine is still not usable after 'dart pub get'."
+    exit 1
+  fi
+}
+
 # ── Dart AST index ─────────────────────────────────────────────────────────────
 _assets_index_dart() {
   local FLUT_HOME="${FLUT_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  _assets_prepare_engine "$FLUT_HOME/engine"
   dart "$FLUT_HOME/engine/asset_analyzer.dart" < /dev/null > "$_ASSETS_USED_INDEX"
 }
 
@@ -105,11 +151,29 @@ _assets_build() {
 }
 
 # ── Git guard ──────────────────────────────────────────────────────────────────
+# Deleting assets should be undoable. Refuse when a repository has uncommitted
+# work; when there is no repository at all, say so and continue rather than
+# reporting a dirty tree from git's error output.
 _assets_git_guard() {
+  if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+    log_warning "Not a git repository — deleted assets cannot be recovered."
+    return 0
+  fi
+
   if ! git diff --quiet || ! git diff --cached --quiet; then
     log_error "Git working tree is not clean. Commit or stash changes first."
     exit 1
   fi
+}
+
+# An asset counts as used if the analyzer saw its full path, or just its
+# filename (paths are often assembled at runtime).
+_assets_is_used() {
+  local asset="$1" base
+  base="$(basename "$asset")"
+  grep -Fq "$asset" "$_ASSETS_USED_INDEX" && return 0
+  grep -Fxq "$base" "$_ASSETS_USED_INDEX" && return 0
+  return 1
 }
 
 # ==============================================================================
@@ -133,7 +197,7 @@ _assets_cmd_check() {
 
   while IFS= read -r asset; do
     total_scanned=$(( total_scanned + 1 ))
-    if ! grep -Fq "$asset" "$_ASSETS_USED_INDEX"; then
+    if ! _assets_is_used "$asset"; then
       local size; size=$(_assets_size "$asset")
       local cat;  cat=$(_assets_category "$asset")
       echo "$asset|$size|$cat" >> "$tmp"
@@ -175,6 +239,9 @@ _assets_cmd_check() {
   log_info "Run 'flut assets clean' to remove unused assets interactively."
   log_info "Run 'flut assets clean --dry-run' to preview, or --all to delete everything."
   echo ""
+
+  # Non-zero when there is something to clean, so CI can gate on it
+  return 1
 }
 
 # ==============================================================================
@@ -196,14 +263,14 @@ _assets_cmd_stats() {
     local size; size=$(_assets_size "$asset")
     local cat;  cat=$(_assets_category "$asset")
     local is_used=0
-    grep -Fq "$asset" "$_ASSETS_USED_INDEX" && is_used=1
+    _assets_is_used "$asset" && is_used=1
     echo "$cat|$size|$is_used" >> "$cat_tmp"
   done < <(_assets_list_files)
 
   local total used unused
   total=$(wc -l < "$cat_tmp" | tr -d ' ')
-  used=$(  grep "|1$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
-  unused=$(grep "|0$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+  used=$(  grep -c "|1$" "$cat_tmp" 2>/dev/null || true)
+  unused=$(grep -c "|0$" "$cat_tmp" 2>/dev/null || true)
 
   printf "  ${_A_BOLD}%-14s${_A_RESET} %s\n"                          "Total"  "$total"
   printf "  ${_A_BOLD}%-14s${_A_RESET} ${_A_GREEN}%s${_A_RESET}\n"   "Used"   "$used"
@@ -217,11 +284,11 @@ _assets_cmd_stats() {
 
   for cat in images icons fonts lottie other; do
     local c_total c_used c_unused c_size
-    c_total=$(  grep "^${cat}|" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+    c_total=$(  grep -c "^${cat}|" "$cat_tmp" 2>/dev/null || true)
     [[ "$c_total" -eq 0 ]] && continue
 
-    c_used=$(   grep "^${cat}|.*|1$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
-    c_unused=$( grep "^${cat}|.*|0$" "$cat_tmp" 2>/dev/null | wc -l | tr -d ' ')
+    c_used=$(   grep -c "^${cat}|.*|1$" "$cat_tmp" 2>/dev/null || true)
+    c_unused=$( grep -c "^${cat}|.*|0$" "$cat_tmp" 2>/dev/null || true)
     c_size=$(   awk -F'|' -v cat="$cat" '$1==cat{s+=$2} END{print s+0}' "$cat_tmp")
 
     local unused_col="$c_unused"
@@ -301,7 +368,7 @@ _assets_cmd_clean() {
     case "$arg" in
       --dry-run) mode="dry"         ;;
       --all)     mode="all"         ;;
-      *) log_error "Unknown option: $arg  (valid: --dry-run, --all)"; return 1 ;;
+      *) log_error "Unknown flag: $arg  (valid: --dry-run, --all)"; return 1 ;;
     esac
   done
 
@@ -319,7 +386,7 @@ _assets_cmd_clean() {
   : > "$list"
 
   while IFS= read -r asset; do
-    if ! grep -Fq "$asset" "$_ASSETS_USED_INDEX"; then
+    if ! _assets_is_used "$asset"; then
       echo "$asset" >> "$list"
     fi
   done < <(_assets_list_files)
@@ -352,6 +419,29 @@ _assets_cmd_clean() {
 
   # ── Delete all ─────────────────────────────────────────────────────────────────
   if [[ "$mode" == "all" ]]; then
+    # Show what is about to go, then ask once. Deleting in bulk without any
+    # confirmation is not something a --all flag should imply.
+    local all_bytes=0
+    while IFS= read -r f; do
+      local size; size=$(_assets_size "$f")
+      all_bytes=$(( all_bytes + size ))
+      printf "    %-65s  %s\n" "$f" "$(_assets_fmt_size "$size")"
+    done < "$list"
+    echo ""
+
+    local confirm=""
+    printf "  Delete all %s file(s), freeing %s? [y/N] " \
+      "$count" "$(_assets_fmt_size "$all_bytes")"
+    read -r confirm || confirm=""
+    case "$confirm" in
+      y|Y) echo "" ;;
+      *)
+        echo ""
+        log_info "Aborted — no files deleted."
+        echo ""
+        return 0 ;;
+    esac
+
     local total_freed=0
     while IFS= read -r f; do
       local size; size=$(_assets_size "$f")
@@ -369,11 +459,15 @@ _assets_cmd_clean() {
   printf "  ${_A_BOLD}Reviewing $count candidate(s):${_A_RESET}\n\n"
 
   local deleted=0 freed=0
+  exec 3<&0   # keep the caller's stdin reachable inside the loop
   while IFS= read -r f; do
     local size; size=$(_assets_size "$f")
     printf "  %s  ${_A_DIM}(%s)${_A_RESET}\n" "$f" "$(_assets_fmt_size "$size")"
     printf "  Delete? [y/N/q] "
-    read -r r < /dev/tty
+    # The candidate list arrives on this loop's stdin, so answers are read from
+    # fd 3, which still points at the caller's stdin — a terminal when run
+    # interactively, the pipe when scripted.
+    read -r r <&3 || r=""
     case "$r" in
       y|Y)
         rm -f "$f"
@@ -385,6 +479,7 @@ _assets_cmd_clean() {
         echo ""
         log_info "Stopped. $deleted file(s) deleted."
         echo ""
+        exec 3<&-
         return 0
         ;;
       *)
@@ -393,6 +488,7 @@ _assets_cmd_clean() {
     esac
     echo ""
   done < "$list"
+  exec 3<&-
 
   if [[ $deleted -gt 0 ]]; then
     log_success "$deleted file(s) deleted — $(_assets_fmt_size "$freed") freed."
@@ -448,6 +544,10 @@ cmd_assets() {
     stats) _assets_cmd_stats "$@" ;;
     audit) _assets_cmd_audit "$@" ;;
     clean) _assets_cmd_clean "$@" ;;
-    *)     _assets_usage ;;
+    ""|-h|--help) _assets_usage ;;
+    *)
+      log_error "Unknown assets subcommand: $subcmd"
+      _assets_usage
+      exit 1 ;;
   esac
 }

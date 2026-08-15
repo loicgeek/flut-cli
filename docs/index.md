@@ -6,7 +6,9 @@ title: flut-cli
 
 **Flutter project scaffold CLI by NTECH-SERVICES**
 
-`flut` is an opinionated bash CLI that bootstraps Flutter projects and features following the NTECH-SERVICES architecture standard — features-first folder structure, plain sealed-class state, AutoRoute navigation, and manual GetIt DI.
+`flut` is an opinionated bash CLI that bootstraps Flutter projects and features — plain sealed-class state, AutoRoute navigation, and manual GetIt DI, with no codegen for data classes.
+
+Pick the feature layout per project: **`ntech`** (default, features-first) or **`clean`** (domain / data / presentation with entities, repository interfaces and use cases).
 
 ---
 
@@ -33,12 +35,12 @@ source ~/.flut-cli/completions/flut.zsh
 ```bash
 # 1. Bootstrap a new Flutter project
 cd my_flutter_app
-flut init
+flut init                        # or: flut init --architecture clean
 
 # 2. Add a feature
 flut feature auth
 flut feature payment --bloc
-flut feature order --service
+flut feature order --service     # ntech only
 
 # 3. Generate individual components into an existing feature
 flut generate screen auth login

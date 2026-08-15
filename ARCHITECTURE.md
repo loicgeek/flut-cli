@@ -2,6 +2,17 @@
 
 > The conventions that `flut-cli` enforces — and the rationale behind each one.
 
+**Scope.** This document describes the **`ntech`** profile, which is what
+`flut init` uses by default. `flut` also ships a **`clean`** profile
+(`flut init --architecture clean`); see
+[section 13](#13-the-clean-architecture-profile).
+
+Almost everything here applies to both profiles — state management, data
+modeling, error handling, dependency injection, navigation, translations and
+the banned-package list are shared. The profiles differ only in how a feature
+is divided internally, which is sections [2](#2-folder-structure),
+[3](#3-layer-responsibilities) and [9](#9-the-service-layer).
+
 ---
 
 ## Table of Contents
@@ -18,6 +29,7 @@
 10. [Translation keys](#10-translation-keys)
 11. [Banned packages](#11-banned-packages)
 12. [What `flut check` enforces](#12-what-flut-check-enforces)
+13. [The Clean Architecture profile](#13-the-clean-architecture-profile)
 
 ---
 
@@ -384,12 +396,115 @@ Examples: `auth.login.title`, `auth.login.emailHint`, `common.loading`, `common.
 
 | Check | Severity | Rule |
 |-------|----------|------|
-| Feature structure | Error | Every feature must have `business_logic/`, `data/`, `data/models/`, `data/repositories/`, `presentation/`, `presentation/screens/`, `presentation/router/`, `presentation/widgets/` |
-| Sealed states | Error | Every `*_state.dart` must declare a `sealed class` |
+| Feature structure | Error | Every feature must have the directories its architecture requires (for `ntech`: `business_logic/`, `data/`, `data/models/`, `data/repositories/`, `presentation/`, `presentation/screens/`, `presentation/router/`, `presentation/widgets/`) |
+| Sealed states | Error | Every `*_state.dart` under `lib/features/` must declare a `sealed class` |
 | Banned packages | Warning | `freezed` and `json_serializable` must not appear in `pubspec.yaml` |
 | Layer boundaries | Error | No file in `presentation/` may `import` a path containing `data/` |
 | Router registration | Warning | Every screen in `presentation/screens/` should appear in `app_router.dart` |
-| DI registration | Warning | Every class registered in `service_locator.dart` must have a matching file |
+| DI registration | Warning | Every class registered in `service_locator.dart` must be declared somewhere in `lib/`, unless the architecture lists it as coming from a package |
 | Translation keys | Warning | Every `tr('key')` call must have a matching entry in `en.json` and `fr.json` |
 | Orphaned generated files | Warning | Every `*.gr.dart` must have a corresponding non-generated source file |
 | Cubit/Bloc convention | Error | Cubits/Blocs must catch `AppFailure`, not bare `Exception` |
+
+The required directories, the banned packages and the package-provided DI
+classes come from the active architecture's manifest, so `check` audits a
+project against the architecture it actually uses. A profile can also add
+rules of its own — see section 13.
+
+---
+
+## 13. The Clean Architecture profile
+
+`flut init --architecture clean` selects an alternative feature layout. The
+project records it in `flut.json`, and every later command reads it from there:
+
+```json
+{ "architecture": "clean" }
+```
+
+Everything outside `lib/features/` is unchanged — same `core/`, same `shared/`,
+same packages, same error handling and DI approach. `clean` adds one file to
+the core scaffold, `lib/core/usecase/usecase.dart`, which every use case
+implements.
+
+### Folder structure
+
+```
+lib/features/<name>/
+├── domain/                                      ← pure Dart
+│   ├── entities/<name>.dart                     ← no Flutter, no Dio, no JSON
+│   ├── repositories/<name>_repository.dart      ← abstract interface
+│   └── usecases/<name>_usecase.dart             ← depends on the interface
+├── data/
+│   ├── models/<name>_model.dart                 ← extends the entity, adds JSON
+│   ├── datasources/<name>_remote_datasource.dart
+│   └── repositories/<name>_repository_impl.dart ← implements the interface
+└── presentation/
+    ├── bloc/                                    ← state + cubit (or bloc + events)
+    ├── router/<name>_router_module.dart
+    ├── screens/<name>_screen.dart
+    └── widgets/
+```
+
+### The rule: dependencies point inwards
+
+```
+presentation  →  domain  ←  data
+```
+
+The domain layer is the centre and depends on nothing. Both other layers
+depend on it, never on each other:
+
+- `domain/` imports only `core/` — never `data/`, never Flutter, never Dio.
+- `data/` implements the interfaces declared in `domain/`.
+- `presentation/` depends on use cases; it never touches a repository
+  implementation or a data source.
+
+This is what buys you the testability: a use case can be exercised with a fake
+repository and no HTTP layer, and the domain compiles without Flutter.
+
+### Why the model extends the entity
+
+`<name>_model.dart` extends `<name>.dart` rather than duplicating it. The
+entity carries the fields the app reasons about; the model adds `fromJson`,
+`toJson` and `fromEntity`. Serialization therefore stays in the data layer,
+and a use case that returns `List<Product>` is satisfied by a
+`List<ProductModel>` without conversion.
+
+### Errors: still `AppFailure`, not `Either`
+
+The textbook Clean Architecture treatment returns `Either<Failure, T>` from
+every use case. `flut` does not, for the same reason it bans `freezed`: that
+would mean a functional-programming dependency (`dartz` or `fpdart`) and a new
+idiom in every call site. `core/error/` already provides `AppFailure`, so use
+cases throw it and the existing `on AppFailure catch` pattern in section 6
+works unchanged in both profiles.
+
+### No `--service`
+
+`--service` is ignored in `clean`. Its purpose in `ntech` — a place for
+orchestration between the repository and the state layer — is already served
+by `data/datasources/` plus the use case, so adding a service would be a
+fourth name for the same responsibility.
+
+### Extra checks
+
+On top of the shared rules in section 12, `clean` enforces:
+
+| Check | Severity | Rule |
+|-------|----------|------|
+| Domain entities are pure | Error | No entity may import `package:flutter` or `package:dio`, or contain `fromJson`/`toJson` |
+| Domain layer isolated | Error | No file under `domain/` may import a path containing `data/` |
+| Use cases depend on interfaces | Error | A use case may not reference `*RepositoryImpl` |
+| Repository contracts | Warning | Every `*_repository_impl.dart` should declare `implements <Name>Repository` |
+
+### Extra generators
+
+| Command | Creates |
+|---------|---------|
+| `flut generate entity <feature> <name>` | `domain/entities/<name>.dart` |
+| `flut generate usecase <feature> <name>` | The use case, plus the entity and repository interface it needs |
+| `flut generate datasource <feature> <name>` | The data source, plus the model and entity |
+
+Each generator also creates whatever it depends on, so generated code always
+resolves.

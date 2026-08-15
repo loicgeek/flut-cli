@@ -1,0 +1,21 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close"
+  },
+  "errors": {
+    "no_internet": "No internet connection.",
+    "session_expired": "Session expired. Please log in again.",
+    "unexpected": "An unexpected error occurred.",
+    "server": "Server error. Please try again later.",
+    "timeout": "Request timed out. Please retry.",
+    "not_found": "Resource not found.",
+    "forbidden": "Access denied."
+  }
+}
+

@@ -25,6 +25,23 @@ _flut() {
   case $state in
     args)
       case ${words[1]} in
+        init)
+          _arguments \
+            '--architecture[Architecture profile to use]:architecture:_flut_architectures' \
+            '-a[Architecture profile to use]:architecture:_flut_architectures'
+          ;;
+        architecture)
+          _arguments -C \
+            '1: :_flut_arch_subcmds' \
+            '*:: :->arch_args'
+          case $state in
+            arch_args)
+              _arguments \
+                '--set[Set the project architecture]:architecture:_flut_architectures' \
+                '-s[Set the project architecture]:architecture:_flut_architectures'
+              ;;
+          esac
+          ;;
         feature)
           _arguments \
             '--bloc[Use Bloc instead of Cubit]' \
@@ -67,6 +84,7 @@ _flut_commands() {
   local commands=(
     'init:Initialize project scaffold'
     'feature:Generate a new feature module'
+    'architecture:List installed architectures or set the project one'
     'upgrade:Upgrade flut-cli to the latest version'
     'check:Audit project architecture'
     'doctor:Check project health'
@@ -76,14 +94,55 @@ _flut_commands() {
   _describe 'command' commands
 }
 
-_flut_generate_types() {
-  local types=(
-    'model:Data model with fromJson/toJson/copyWith'
-    'screen:Presentation screen widget'
-    'repository:Repository with Dio error handling'
-    'cubit:Cubit state manager'
-    'bloc:Bloc with event class'
+_flut_arch_subcmds() {
+  local subcmds=(
+    'list:Show installed architectures and current'
+    '--set:Set the project architecture'
   )
+  _describe 'subcommand' subcmds
+}
+
+_flut_architectures() {
+  local file dir archs=() d
+  file="${funcsourcetrace[1]%:*}"
+  dir="${file:h:h}/architectures"
+  for d in "$dir"/*/; do
+    [[ -d "$d" ]] && archs+=("${d:t}")
+  done
+  if [[ ${#archs[@]} -gt 0 ]]; then
+    _values 'architecture' "${archs[@]}"
+  fi
+}
+
+_flut_generate_types() {
+  local -A descriptions=(
+    model      'Data model with fromJson/toJson'
+    screen     'Presentation screen widget'
+    repository 'Repository with Dio error handling'
+    cubit      'Cubit state manager'
+    bloc       'Bloc with event class'
+    entity     'Domain entity (pure Dart)'
+    usecase    'Use case built on a repository interface'
+    datasource 'Remote data source for the data layer'
+  )
+
+  # The available types come from the architecture the project uses
+  local file dir arch=ntech layout raw t
+  file="${funcsourcetrace[1]%:*}"
+  dir="${file:h:h}"
+  if [[ -f flut.json ]]; then
+    arch="${$(sed -nE 's/.*"architecture"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' flut.json):-ntech}"
+  fi
+  layout="$dir/architectures/$arch/layout.sh"
+  if [[ -f "$layout" ]]; then
+    raw="$(sed -nE 's/^ARCH_GENERATE_TYPES=\((.*)\)/\1/p' "$layout" | head -n 1)"
+  fi
+  [[ -n "$raw" ]] || raw='model screen repository cubit bloc'
+
+  local types=()
+  for t in ${=raw}; do
+    types+=("${t}:${descriptions[$t]:-Generate a ${t}}")
+  done
   _describe 'type' types
 }
 
@@ -104,4 +163,20 @@ _flut_asset_subcmds() {
   _describe 'subcommand' subcmds
 }
 
-compdef _flut flut
+# `compdef` only exists once compinit has run. Sourcing this file before that
+# (or in a non-interactive shell) should not error, so register lazily.
+if (( $+functions[compdef] )); then
+  compdef _flut flut
+else
+  # compinit has not run yet — register as soon as it does.
+  autoload -Uz add-zsh-hook 2>/dev/null
+  _flut_register_completion() {
+    if (( $+functions[compdef] )); then
+      compdef _flut flut
+      add-zsh-hook -d precmd _flut_register_completion 2>/dev/null
+    fi
+  }
+  if (( $+functions[add-zsh-hook] )); then
+    add-zsh-hook precmd _flut_register_completion
+  fi
+fi
