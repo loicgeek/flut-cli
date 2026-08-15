@@ -7,10 +7,10 @@
 #    2. Create a GitHub Release with auto-generated release notes
 #
 #  How to release a new version:
-#    1. Update the VERSION file:   echo "0.4.0" > VERSION
+#    1. Update the VERSION file:   echo "0.3.0" > VERSION
 #    2. Record the changes in CHANGELOG.md under a new heading
-#    3. Commit:                    git add VERSION CHANGELOG.md && git commit -m "chore: bump version to 0.4.0"
-#    4. Tag and push:              git tag v0.4.0 && git push origin main --tags
+#    3. Commit:                    git add VERSION CHANGELOG.md && git commit -m "chore: bump version to 0.3.0"
+#    4. Tag and push:              git tag v0.3.0 && git push origin main --tags
 #
 #  The tag must match the VERSION file; the workflow verifies this.
 # =============================================================================

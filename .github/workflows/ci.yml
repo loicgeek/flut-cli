@@ -53,6 +53,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # `flut assets` shells out to a Dart analyzer, so without the SDK those
+      # tests skip and the command goes untested.
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
       - name: Install bats
         run: |
           sudo apt-get update
