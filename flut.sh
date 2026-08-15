@@ -30,7 +30,10 @@ done
 _FLUT_SCRIPT_DIR="$(cd -P "$(dirname "$_flut_src")" && pwd)"
 unset _flut_src _flut_src_dir
 
-FLUT_VERSION="$(tr -d '[:space:]' < "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null || true)"
+FLUT_VERSION=""
+if [[ -f "$_FLUT_SCRIPT_DIR/VERSION" ]]; then
+  FLUT_VERSION="$(tr -d '[:space:]' < "$_FLUT_SCRIPT_DIR/VERSION" 2>/dev/null || true)"
+fi
 FLUT_VERSION="${FLUT_VERSION:-dev}"
 
 RED='\033[0;31m'
@@ -46,12 +49,35 @@ log_warning() { echo -e "${YELLOW}  !!  ${RESET} $1"; }
 log_error()   { echo -e "${RED}  xx  ${RESET} $1"; }
 log_section() { echo -e "\n${BOLD}${CYAN}>> $1${RESET}"; }
 
-# Load command modules (one file per command)
+# Load command modules (one file per command). flut.sh is only an entrypoint:
+# without commands/ it can do nothing, so say so plainly instead of failing
+# later with "cmd_x: command not found".
+_flut_modules=0
 for _flut_module in "$_FLUT_SCRIPT_DIR"/commands/cmd_*.sh; do
+  [[ -f "$_flut_module" ]] || continue
   # shellcheck source=/dev/null
-  [[ -f "$_flut_module" ]] && source "$_flut_module"
+  source "$_flut_module"
+  _flut_modules=$((_flut_modules + 1))
 done
 unset _flut_module
+
+if [[ $_flut_modules -eq 0 ]]; then
+  echo "flut: no command modules found in $_FLUT_SCRIPT_DIR/commands" >&2
+  echo "flut: this looks like a partial install - reinstall with:" >&2
+  echo "      curl -fsSL https://raw.githubusercontent.com/loicgeek/flut-cli/main/install.sh | bash" >&2
+  exit 1
+fi
+unset _flut_modules
+
+# Dispatch helper: a missing module should be a clear message, not a 127.
+_run_cmd() {
+  local fn="$1"; shift
+  if ! declare -f "$fn" >/dev/null 2>&1; then
+    log_error "Command '${fn#cmd_}' is unavailable - its module is missing. Try: flut upgrade"
+    exit 1
+  fi
+  "$fn" "$@"
+}
 
 mkf() {
   local path="$1" content="$2"
@@ -278,20 +304,15 @@ usage() {
 }
 
 case "${1:-}" in
-  init)            shift; cmd_init "$@" ;;
-  architecture)    shift; cmd_architecture "$@" ;;
-  feature)         shift; cmd_feature "$@" ;;
-  generate)        shift; cmd_generate "$@" ;;
-  check)           cmd_check ;;
-  doctor)          cmd_doctor ;;
-  clean)           shift; cmd_clean "$@" ;;
-  assets)
-    if declare -f cmd_assets &>/dev/null; then
-      shift; cmd_assets "$@"
-    else
-      log_error "assets module not found. Try: flut upgrade"; exit 1
-    fi ;;
-  upgrade)         cmd_upgrade ;;
+  init)            shift; _run_cmd cmd_init "$@" ;;
+  architecture)    shift; _run_cmd cmd_architecture "$@" ;;
+  feature)         shift; _run_cmd cmd_feature "$@" ;;
+  generate)        shift; _run_cmd cmd_generate "$@" ;;
+  check)           _run_cmd cmd_check ;;
+  doctor)          _run_cmd cmd_doctor ;;
+  clean)           shift; _run_cmd cmd_clean "$@" ;;
+  assets)          shift; _run_cmd cmd_assets "$@" ;;
+  upgrade)         _run_cmd cmd_upgrade ;;
   -h|--help|"")    usage ;;
   --version|-v)    echo "flut v${FLUT_VERSION}" ;;
   *) log_error "Unknown command: $1"; usage; exit 1 ;;
