@@ -39,7 +39,10 @@ jobs:
         run: cp ARCHITECTURE.md docs/architecture.md
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site on first run instead of failing with 404
+          enablement: true
 
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
