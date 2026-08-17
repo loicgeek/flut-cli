@@ -6,6 +6,10 @@
 load helpers
 
 setup() {
+  # The asset analyzer is a Dart program, so these tests need the Dart SDK.
+  # Skip rather than fail so the suite still runs for contributors without it;
+  # CI installs Dart so they are always exercised there.
+  command -v dart &>/dev/null || skip "dart not in PATH — required by the asset analyzer"
   setup_sandbox
 }
 

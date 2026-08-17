@@ -184,3 +184,20 @@ teardown() {
   assert_file_contains "lib/features/auth/presentation/router/auth_router_module.dart" \
     "package:test_app/"
 }
+
+# ── Router module must reference the file auto_route actually generates ──────
+
+@test "feature router module imports the .gr.dart auto_route generates" {
+  run bash "$FLUT_SCRIPT" feature product
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/product/presentation/router/product_router_module.dart" \
+    "import 'product_router_module.gr.dart';"
+  assert_file_not_contains "lib/features/product/presentation/router/product_router_module.dart" \
+    "product_router_module.g.dart'"
+}
+
+@test "bloc feature re-exports its events so the screen compiles" {
+  run bash "$FLUT_SCRIPT" feature order --bloc
+  [ "$status" -eq 0 ]
+  assert_file_contains "lib/features/order/business_logic/order_bloc.dart" "export 'order_event.dart';"
+}

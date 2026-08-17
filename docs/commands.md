@@ -7,6 +7,7 @@
 ## Table of Contents
 
 - [`flut init`](#flut-init)
+- [`flut architecture`](#flut-architecture)
 - [`flut feature`](#flut-feature-name---bloc---service)
 - [`flut generate`](#flut-generate-type-feature-name)
 - [`flut check`](#flut-check)
@@ -27,7 +28,16 @@ Bootstraps a full project scaffold inside the current Flutter project.
 
 ```
 flut init
+flut init --architecture <name>
+flut init -a <name>
+flut init --architecture=<name>
 ```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--architecture` / `-a` | No | Architecture profile to scaffold (default `ntech`). Writes the project's `flut.json`. |
 
 ### What it creates
 
@@ -79,7 +89,15 @@ assets/
 ```bash
 # From the root of an existing Flutter project
 flut init
+
+# Scaffold with a specific architecture profile
+flut init --architecture ntech
 ```
+
+### Notes
+
+- Every `flut init` writes a `flut.json` file with the chosen architecture.
+- Re-running `flut init` **without** `--architecture` keeps the architecture already recorded in `flut.json`.
 
 ### Next steps after `flut init`
 
@@ -87,6 +105,61 @@ flut init
 2. Run `flutter pub add --dev build_runner auto_route_generator`
 3. Run `dart run build_runner build --delete-conflicting-outputs`
 4. Set `easy_localization` up in `app.dart` (see printed checklist)
+
+---
+
+## `flut architecture`
+
+Manages the architecture profile of the current project. The active profile is stored in `flut.json` (created by `flut init`).
+
+### Synopsis
+
+```
+flut architecture
+flut architecture list
+flut architecture --set <name>
+```
+
+### Sub-commands
+
+| Argument | Description |
+|----------|-------------|
+| *(none)* / `list` | List installed architecture profiles and mark the current one. |
+| `--set <name>` / `-s <name>` | Set the project's architecture in `flut.json`. |
+
+### Installed profiles
+
+| Profile | Feature slice layout | Extra `generate` types |
+|---------|----------------------|------------------------|
+| `ntech` *(default)* | `business_logic/`, `data/{models,repositories,services}`, `presentation/{screens,router,widgets}` | — |
+| `clean` | `domain/{entities,repositories,usecases}`, `data/{models,datasources,repositories}`, `presentation/{bloc,screens,router,widgets}` | `entity`, `usecase`, `datasource` |
+
+`clean` builds on the same core scaffold as `ntech` (API client, DI, router,
+theme, storage, error handling) and adds `lib/core/usecase/usecase.dart`, the
+base contract every use case implements. Dependencies point inwards only:
+`presentation -> domain <- data`, so the domain layer stays free of Dio and
+JSON. In `clean`, `--service` is ignored because `data/datasources/` already
+isolates data access.
+
+### Examples
+
+```bash
+flut architecture
+# >> Architectures
+#   current: ntech
+#
+#       clean  Clean Architecture: domain, data, presentation per feature
+#     * ntech  Features-first: core, shared, features (default)
+
+flut architecture --set clean
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Unknown argument, unknown architecture, or missing value for `--set` |
 
 ---
 
@@ -151,7 +224,7 @@ flut feature checkout --bloc --service   # Bloc + service layer
    sl.registerSingleton<AuthRepository>(AuthRepository(sl<Dio>()));
    sl.registerFactory<AuthCubit>(() => AuthCubit(sl<AuthRepository>()));
    ```
-2. Add your endpoint in `lib/core/api/api_endpoints.dart`.
+2. The endpoint `static const <name>s` is registered in `lib/core/api/api_endpoints.dart` for you — adjust the path if the API differs.
 3. Add the route in `lib/core/router/app_router.dart`.
 4. Add translation keys in `assets/translations/en.json` and `fr.json`.
 5. Run `dart run build_runner build --delete-conflicting-outputs`.
@@ -249,15 +322,36 @@ flut check
 
 | # | Check | Severity | What it looks for |
 |---|-------|----------|-------------------|
-| 1 | Feature structure | Error | Each feature under `lib/features/` must have all required directories |
-| 2 | Sealed states | Error | Every `*_state.dart` must declare a `sealed class` |
+| 1 | Feature structure | Error | Each feature under `lib/features/` must have the directories its architecture requires |
+| 2 | Sealed states | Error | Every `*_state.dart` **under `lib/features/`** must declare a `sealed class` |
 | 3 | Banned packages | Warning | `freezed` or `json_serializable` in `pubspec.yaml` |
 | 4 | Layer boundaries | Error | No file in `presentation/` may import a path containing `data/` |
 | 5 | Router registration | Warning | Every screen in `presentation/screens/` should be referenced in `app_router.dart` |
-| 6 | DI registration | Warning | Every class in `service_locator.dart` must have a matching file |
+| 6 | DI registration | Warning | Every class registered in `service_locator.dart` must be declared somewhere in `lib/` |
 | 7 | Translation keys | Warning | Every `tr('key')` call must exist in both `en.json` and `fr.json` |
 | 8 | Orphaned generated files | Warning | Every `*.gr.dart` must have a corresponding source file |
 | 9 | Cubit/Bloc convention | Error | Cubits/Blocs must catch `AppFailure`, not generic `Exception` |
+
+Check 1 reads its required directories from the active architecture, so a
+`clean` project is audited against `domain/`, `data/` and `presentation/`
+rather than ntech's layout. Check 2 only considers state files under
+`lib/features/`, so presentation widgets such as `shared/widgets/empty_state.dart`
+are not mistaken for bloc states. Check 6 matches the class *declaration*
+rather than a filename, ignores commented-out registrations, and skips classes
+the architecture registers from packages (`Dio`, `Connectivity`,
+`FlutterSecureStorage` for ntech).
+
+### Additional checks for `clean`
+
+The Clean Architecture profile adds four rules that enforce its dependency
+rule — `presentation -> domain <- data`:
+
+| Check | Severity | What it looks for |
+|-------|----------|-------------------|
+| Domain entities are pure | Error | No entity may import `package:flutter` or `package:dio`, or handle JSON |
+| Domain layer isolated | Error | Nothing under `domain/` may import the data layer |
+| Use cases depend on interfaces | Error | A use case may not reference `*RepositoryImpl` |
+| Repository contracts | Warning | Each `*_repository_impl.dart` should `implements <Name>Repository` |
 
 ### Exit codes
 
