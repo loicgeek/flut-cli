@@ -5,10 +5,10 @@ All notable changes to `flut-cli` are documented here.
 This project follows [Semantic Versioning](https://semver.org/). While the
 major version is `0`, minor releases may change generated output.
 
-## [0.3.0] — 2026-08-15
+## [0.4.0] — 2026-08-18
 
-The `flut assets` command was built for this version but never tagged, so
-everything below is new since `v0.2.3`.
+The first release to ship the `flut assets` command, which was developed as
+0.3.0 but never published. Everything below is therefore new since `v0.2.3`.
 
 ### Added
 
@@ -110,5 +110,5 @@ everything below is new since `v0.2.3`.
 
 See the [GitHub releases](https://github.com/loicgeek/flut-cli/releases).
 
-[0.3.0]: https://github.com/loicgeek/flut-cli/releases/tag/v0.3.0
+[0.4.0]: https://github.com/loicgeek/flut-cli/releases/tag/v0.4.0
 [0.2.3]: https://github.com/loicgeek/flut-cli/releases/tag/v0.2.3
